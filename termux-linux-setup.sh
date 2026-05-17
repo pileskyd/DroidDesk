@@ -4,7 +4,7 @@
 #
 #  Features:
 #  - XFCE4 / LXQt / MATE / KDE Desktop
-#  - Smart GPU acceleration (Turnip/Zink)
+#  - Smart GPU acceleration (Turnip/Zink for Adreno, VirGL/virpipe for Huawei/Kirin/Mali)
 #  - Termux-X11 display + optional VNC
 #  - Modern dark XFCE theme + auto wallpaper
 #  - Proot Linux container (Ubuntu/Debian/Kali)
@@ -19,6 +19,15 @@ DE_CHOICE="1"
 DE_NAME="XFCE4"
 VNC_ENABLED=false
 SETUP_USERNAME="user"
+
+# GPU profile is selected during device detection.
+# Values:
+#   adreno_zink  - Qualcomm/Adreno via Turnip/Zink
+#   mali_virgl   - Huawei/Kirin/Mali via virglrenderer-android + virpipe
+#   llvmpipe     - stable software fallback
+GPU_PROFILE="auto"
+GPU_LABEL="Auto"
+GPU_HINT=""
 
 # Wallpaper URL — Ubuntu 4K wallpaper (set by user)
 WALLPAPER_URL="https://wallpapercave.com/download/ubuntu-4k-wallpapers-wp8303186"
@@ -81,6 +90,21 @@ install_pkg() {
     spinner $! "Installing ${name}..."
 }
 
+install_pkg_any() {
+    local candidates="$1"
+    local name="$2"
+    local pkg
+    for pkg in $candidates; do
+        if DEBIAN_FRONTEND=noninteractive apt-get install -y \
+            -o Dpkg::Options::="--force-confold" "$pkg" > /dev/null 2>&1; then
+            echo -e "  [+] Installing ${name}: ${pkg}"
+            return 0
+        fi
+    done
+    echo -e "  ${YELLOW}[!] Could not install ${name}. Tried: ${candidates}${NC}"
+    return 1
+}
+
 # ============== BANNER ==============
 show_banner() {
     clear
@@ -107,19 +131,66 @@ setup_environment() {
     ANDROID_VERSION=$(getprop ro.build.version.release 2>/dev/null || echo "Unknown")
     CPU_ABI=$(getprop ro.product.cpu.abi 2>/dev/null || echo "arm64-v8a")
     GPU_VENDOR=$(getprop ro.hardware.egl 2>/dev/null || echo "")
+    SOC_PLATFORM=$(getprop ro.board.platform 2>/dev/null || echo "")
+    SOC_MODEL=$(getprop ro.soc.model 2>/dev/null || echo "")
+    HARDWARE=$(getprop ro.hardware 2>/dev/null || echo "")
+    VULKAN_HINT=$(getprop ro.hardware.vulkan 2>/dev/null || echo "")
+
+    # SurfaceFlinger often exposes the real renderer when ro.hardware.egl is empty.
+    SF_HINT=""
+    if command -v dumpsys >/dev/null 2>&1; then
+        SF_HINT=$(dumpsys SurfaceFlinger 2>/dev/null | \
+            grep -iE 'GLES|GPU|Vulkan|Mali|Maleoon|Immortalis|Adreno|Freedreno|PowerVR|Xclipse' | \
+            head -20 | tr '\n' ' ')
+    fi
+
+    GPU_HINT="${DEVICE_BRAND} ${DEVICE_MODEL} ${GPU_VENDOR} ${SOC_PLATFORM} ${SOC_MODEL} ${HARDWARE} ${VULKAN_HINT} ${SF_HINT}"
+    GPU_HINT_LC=$(echo "$GPU_HINT" | tr '[:upper:]' '[:lower:]')
 
     echo -e "  [*] Device : ${WHITE}${DEVICE_BRAND} ${DEVICE_MODEL}${NC}"
     echo -e "  [*] Android: ${WHITE}${ANDROID_VERSION}${NC}"
 
-    if [[ "$GPU_VENDOR" == *"adreno"* ]] || \
-       [[ "$DEVICE_BRAND" =~ [Ss]amsung|[Oo]ne[Pp]lus|[Xx]iaomi|[Rr]edmi|[Pp]oco|[Mm]oto|motorola ]]; then
-        GPU_DRIVER="freedreno"
-        echo -e "  [*] GPU    : ${WHITE}Adreno — Hardware Acceleration Enabled${NC}"
-    else
-        GPU_DRIVER="zink_native"
-        echo -e "  [*] GPU    : ${WHITE}Non-Adreno — Zink/LLVMpipe fallback${NC}"
-        echo -e "${YELLOW}      [!] Recommend XFCE or LXQt for best performance.${NC}"
-    fi
+    # Manual override, useful for testing:
+    #   FORCE_GPU_PROFILE=mali_virgl bash setup.sh
+    #   FORCE_GPU_PROFILE=adreno_zink bash setup.sh
+    #   FORCE_GPU_PROFILE=llvmpipe bash setup.sh
+    case "${FORCE_GPU_PROFILE:-}" in
+        mali_virgl|adreno_zink|llvmpipe)
+            GPU_PROFILE="$FORCE_GPU_PROFILE"
+            ;;
+        *)
+            if echo "$GPU_HINT_LC" | grep -Eq 'huawei|honor|kirin|mali|maleoon|immortalis'; then
+                # Huawei Kirin devices normally use Mali/Maleoon GPUs. Native Zink over Android Vulkan
+                # is unstable on many of them, so prefer VirGL over Android GLES.
+                GPU_PROFILE="mali_virgl"
+            elif echo "$GPU_HINT_LC" | grep -Eq 'adreno|freedreno|qualcomm|snapdragon'; then
+                GPU_PROFILE="adreno_zink"
+            else
+                GPU_PROFILE="llvmpipe"
+            fi
+            ;;
+    esac
+
+    case "$GPU_PROFILE" in
+        adreno_zink)
+            GPU_DRIVER="freedreno"
+            GPU_LABEL="Adreno — Turnip/Zink"
+            echo -e "  [*] GPU    : ${WHITE}${GPU_LABEL}${NC}"
+            ;;
+        mali_virgl)
+            GPU_DRIVER="virgl"
+            GPU_LABEL="Huawei/Kirin/Mali — VirGL/virpipe"
+            echo -e "  [*] GPU    : ${WHITE}${GPU_LABEL}${NC}"
+            echo -e "${YELLOW}      [!] Zink disabled for this profile; using virglrenderer-android for stability.${NC}"
+            echo -e "${YELLOW}      [!] XFCE or LXQt is strongly recommended. KDE is not recommended on Kirin/Mali.${NC}"
+            ;;
+        *)
+            GPU_DRIVER="llvmpipe"
+            GPU_LABEL="Software llvmpipe fallback"
+            echo -e "  [*] GPU    : ${WHITE}${GPU_LABEL}${NC}"
+            echo -e "${YELLOW}      [!] Hardware GPU profile was not detected. You can rerun with FORCE_GPU_PROFILE=mali_virgl if needed.${NC}"
+            ;;
+    esac
     echo ""
 
     echo -e "${CYAN}Choose your Desktop Environment:${NC}"
@@ -217,11 +288,22 @@ step_gpu() {
     update_progress
     echo -e "${PURPLE}[Step ${CURRENT_STEP}/${TOTAL_STEPS}] Installing GPU Acceleration...${NC}"
     echo ""
-    install_pkg "mesa-zink" "Mesa Zink Core"
-    if [ "$GPU_DRIVER" == "freedreno" ]; then
+
+    install_pkg_any "mesa mesa-demos" "Mesa base utilities" || true
+
+    if [ "$GPU_PROFILE" == "adreno_zink" ]; then
+        install_pkg "mesa-zink" "Mesa Zink Core"
         install_pkg "mesa-vulkan-icd-freedreno" "Turnip Adreno Driver"
+        install_pkg "vulkan-loader-android" "Vulkan Loader"
+    elif [ "$GPU_PROFILE" == "mali_virgl" ]; then
+        # Kirin/Mali: avoid native Zink by default. Use Android GLES through VirGL.
+        # Package name changed in some setups, so try both names.
+        install_pkg_any "virglrenderer-android virglrenderer" "VirGL Android renderer" || true
+        install_pkg_any "mesa-demos mesa-utils" "OpenGL test tools" || true
+    else
+        install_pkg_any "mesa-demos mesa-utils" "OpenGL test tools" || true
+        echo -e "  ${YELLOW}[!] Using software rendering fallback (llvmpipe).${NC}"
     fi
-    install_pkg "vulkan-loader-android" "Vulkan Loader"
 }
 
 # ============== STEP 6: AUDIO ==============
@@ -345,8 +427,43 @@ echo "  [*] Starting \$PROOT_LABEL"
 echo "============================================="
 echo ""
 
+source "\$HOME/.config/linux-gpu.sh" 2>/dev/null || true
+GPU_PROFILE="\${TERMUX_GPU_PROFILE:-$GPU_PROFILE}"
+
+start_virgl_server() {
+    [ "\$GPU_PROFILE" = "mali_virgl" ] || return 0
+    command -v virgl_test_server_android >/dev/null 2>&1 || {
+        echo "[!] virgl_test_server_android not found. Run: pkg install virglrenderer-android"
+        return 1
+    }
+    pgrep -f "virgl_test_server_android" >/dev/null 2>&1 && return 0
+
+    LOG="\$TERMUX_TMP/virgl-kirin.log"
+    ARGS=""
+    virgl_test_server_android --help 2>&1 | grep -q -- '--use-egl-surfaceless' && ARGS="--use-egl-surfaceless"
+    echo "[*] Starting VirGL Android renderer for Kirin/Mali... log: \$LOG"
+    (
+        while true; do
+            echo "[\$(date)] virgl_test_server_android \$ARGS" >> "\$LOG"
+            virgl_test_server_android \$ARGS >> "\$LOG" 2>&1
+            echo "[\$(date)] VirGL exited; restarting in 2s" >> "\$LOG"
+            sleep 2
+        done
+    ) &
+    echo \$! > "\$TERMUX_TMP/virgl-watchdog.pid"
+    sleep 1
+}
+
+start_virgl_server
+
 BINDS=""
-[ -d "\$TERMUX_TMP/.X11-unix" ] && BINDS="\$BINDS --bind \$TERMUX_TMP/.X11-unix:/tmp/.X11-unix"
+SHARED_TMP=""
+if [ "\$GPU_PROFILE" = "mali_virgl" ]; then
+    # virpipe needs the VirGL socket from Termux tmp; --shared-tmp is safer than binding only .X11-unix.
+    SHARED_TMP="--shared-tmp"
+else
+    [ -d "\$TERMUX_TMP/.X11-unix" ] && BINDS="\$BINDS --bind \$TERMUX_TMP/.X11-unix:/tmp/.X11-unix"
+fi
 [ -d "/dev/dri" ]               && BINDS="\$BINDS --bind /dev/dri:/dev/dri"
 [ -e "/dev/kgsl-3d0" ]          && BINDS="\$BINDS --bind /dev/kgsl-3d0:/dev/kgsl-3d0"
 [ -d "${TERMUX_VK_ICD}" ]       && BINDS="\$BINDS --bind ${TERMUX_VK_ICD}:/usr/share/vulkan/icd.d.termux"
@@ -354,27 +471,44 @@ BINDS=""
     BINDS="\$BINDS --bind ${TERMUX_LIB}/libvulkan.so:/usr/lib/aarch64-linux-gnu/libvulkan_termux.so"
 
 _RC=\$(mktemp /data/data/com.termux/files/usr/tmp/proot_rc.XXXX)
-cat > "\$_RC" << 'RCEOF'
+cat > "\$_RC" << RCEOF
 export DISPLAY=:0
+export XDG_RUNTIME_DIR=/tmp
 export MESA_NO_ERROR=1
-export MESA_GL_VERSION_OVERRIDE=4.6
 export MESA_GLES_VERSION_OVERRIDE=3.2
-export GALLIUM_DRIVER=zink
-export MESA_LOADER_DRIVER_OVERRIDE=zink
-export TU_DEBUG=noconform
-export ZINK_DESCRIPTORS=lazy
-export MESA_VK_WSI_PRESENT_MODE=immediate
-[ -f /usr/share/vulkan/icd.d.termux/freedreno_icd.aarch64.json ] && \
-    export VK_ICD_FILENAMES=/usr/share/vulkan/icd.d.termux/freedreno_icd.aarch64.json
+export GPU_PROFILE="\$GPU_PROFILE"
+
+if [ "\$GPU_PROFILE" = "mali_virgl" ]; then
+    export GALLIUM_DRIVER=virpipe
+    export MESA_GL_VERSION_OVERRIDE=4.0
+    export LIBGL_DRI3_DISABLE=1
+    unset MESA_LOADER_DRIVER_OVERRIDE
+    unset VK_ICD_FILENAMES
+    unset TU_DEBUG
+elif [ "\$GPU_PROFILE" = "adreno_zink" ]; then
+    export GALLIUM_DRIVER=zink
+    export MESA_LOADER_DRIVER_OVERRIDE=zink
+    export MESA_GL_VERSION_OVERRIDE=4.6
+    export TU_DEBUG=noconform
+    export ZINK_DESCRIPTORS=lazy
+    export MESA_VK_WSI_PRESENT_MODE=immediate
+    [ -f /usr/share/vulkan/icd.d.termux/freedreno_icd.aarch64.json ] && \
+        export VK_ICD_FILENAMES=/usr/share/vulkan/icd.d.termux/freedreno_icd.aarch64.json
+else
+    export LIBGL_ALWAYS_SOFTWARE=1
+    export GALLIUM_DRIVER=llvmpipe
+    export MESA_GL_VERSION_OVERRIDE=4.5
+fi
+
 export XDG_DATA_DIRS=/usr/share:/usr/local/share:\${XDG_DATA_DIRS}
 export PS1="\[\033[01;32m\]$SETUP_USERNAME@linux\[\033[00m\]:\[\033[01;34m\]\w\[\033[00m\]\$ "
 echo ""
-echo " User: $SETUP_USERNAME | GPU: GALLIUM=\${GALLIUM_DRIVER}"
+echo " User: $SETUP_USERNAME | GPU_PROFILE=\$GPU_PROFILE | GALLIUM=\${GALLIUM_DRIVER}"
 echo " Type 'exit' to leave proot."
 echo ""
 RCEOF
 
-proot-distro login "\$PROOT_DISTRO" \$BINDS --user root -- bash --rcfile "\$_RC"
+proot-distro login "\$PROOT_DISTRO" \$SHARED_TMP \$BINDS --user root -- bash --rcfile "\$_RC"
 rm -f "\$_RC"
 PROOTEOF
     chmod +x ~/start-proot.sh
@@ -397,6 +531,8 @@ PROOT_APPS="$PROOT_ROOTFS/usr/share/applications"
 BRIDGE_DIR="$HOME/.local/share/applications/proot-bridge"
 WRAPPER_DIR="$HOME/.local/share/proot-wrappers"
 TERMUX_TMP="${TMPDIR:-/data/data/com.termux/files/usr/tmp}"
+source "$HOME/.config/linux-gpu.sh" 2>/dev/null || true
+TERMUX_GPU_PROFILE="${TERMUX_GPU_PROFILE:-llvmpipe}"
 
 if [ ! -f "$PROOT_BIN" ]; then
     echo "[!] proot-distro not found. pkg install proot-distro"
@@ -413,8 +549,17 @@ fi
 
 mkdir -p "$BRIDGE_DIR" "$WRAPPER_DIR"
 
-HAS_GPU="software"
-[ -d "/dev/dri" ] && HAS_GPU="zink"
+case "$TERMUX_GPU_PROFILE" in
+    mali_virgl)
+        COMMON_GPU_ENV='export GALLIUM_DRIVER=virpipe; export MESA_GL_VERSION_OVERRIDE=4.0; export MESA_GLES_VERSION_OVERRIDE=3.2; export LIBGL_DRI3_DISABLE=1; unset MESA_LOADER_DRIVER_OVERRIDE; unset VK_ICD_FILENAMES;'
+        ;;
+    adreno_zink)
+        COMMON_GPU_ENV='export GALLIUM_DRIVER=zink; export MESA_LOADER_DRIVER_OVERRIDE=zink; export MESA_GL_VERSION_OVERRIDE=4.6; export MESA_GLES_VERSION_OVERRIDE=3.2; export TU_DEBUG=noconform; export ZINK_DESCRIPTORS=lazy;'
+        ;;
+    *)
+        COMMON_GPU_ENV='export LIBGL_ALWAYS_SOFTWARE=1; export GALLIUM_DRIVER=llvmpipe; export MESA_GL_VERSION_OVERRIDE=4.5;'
+        ;;
+esac
 
 # Ensure dbus-x11 in proot
 if ! "$PROOT_BIN" login "$PROOT_DISTRO" -- which dbus-run-session > /dev/null 2>&1; then
@@ -457,7 +602,10 @@ for desktop_file in "$PROOT_APPS"/*.desktop; do
 
     if echo "$appname" | grep -qi "blender"; then
         APP_CMD="$CLEAN_EXEC"
-        if "$PROOT_BIN" login "$PROOT_DISTRO" -- \
+        if [ "$TERMUX_GPU_PROFILE" = "mali_virgl" ]; then
+            EXTRA_ENV="export GALLIUM_DRIVER=virpipe; export MESA_GL_VERSION_OVERRIDE=4.0; export LIBGL_DRI3_DISABLE=1;"
+            echo "  [+] Blender: VirGL/virpipe mode"
+        elif "$PROOT_BIN" login "$PROOT_DISTRO" -- \
                 ldconfig -p 2>/dev/null | grep -q "libvulkan.so.1"; then
             EXTRA_ENV="export GALLIUM_DRIVER=zink; export MESA_GL_VERSION_OVERRIDE=4.6;"
             echo "  [+] Blender: Zink GPU mode"
@@ -474,19 +622,29 @@ PROOT_DISTRO="$PROOT_DISTRO"
 TERMUX_TMP="\${TMPDIR:-/data/data/com.termux/files/usr/tmp}"
 LOG="\$TERMUX_TMP/proot-${appname}.log"
 
+source "\$HOME/.config/linux-gpu.sh" 2>/dev/null || true
+source "\$HOME/.config/termux-gpu-common.sh" 2>/dev/null || true
+[ "\${TERMUX_GPU_PROFILE:-}" = "mali_virgl" ] && start_virgl_server 2>/dev/null || true
+
 BINDS=""
+SHARED_TMP=""
 X11_DIR="\$TERMUX_TMP/.X11-unix"
-[ -d "\$X11_DIR" ]     && BINDS="\$BINDS --bind \$X11_DIR:/tmp/.X11-unix"
+if [ "\${TERMUX_GPU_PROFILE:-}" = "mali_virgl" ]; then
+    SHARED_TMP="--shared-tmp"
+else
+    [ -d "\$X11_DIR" ] && BINDS="\$BINDS --bind \$X11_DIR:/tmp/.X11-unix"
+fi
 [ -d "/dev/dri" ]      && BINDS="\$BINDS --bind /dev/dri:/dev/dri"
 [ -e "/dev/kgsl-3d0" ] && BINDS="\$BINDS --bind /dev/kgsl-3d0:/dev/kgsl-3d0"
 
 {
 echo "[+] Launching $appname at \$(date)"
-echo "    X11=\$X11_DIR  BINDS=\$BINDS"
-\$PROOT_BIN login "\$PROOT_DISTRO" \$BINDS -- /bin/bash -c "
+echo "    X11=\$X11_DIR  SHARED_TMP=\$SHARED_TMP  BINDS=\$BINDS"
+\$PROOT_BIN login "\$PROOT_DISTRO" \$SHARED_TMP \$BINDS -- /bin/bash -c "
 export DISPLAY=:0
 export XDG_RUNTIME_DIR=/tmp
 export MESA_NO_ERROR=1
+$COMMON_GPU_ENV
 $EXTRA_ENV
 dbus-run-session $APP_CMD
 "
@@ -537,17 +695,88 @@ step_launchers() {
 
     # GPU env config
     cat > ~/.config/linux-gpu.sh << EOF
+# Generated by Termux Linux Setup Script
+export TERMUX_GPU_PROFILE="$GPU_PROFILE"
+export TERMUX_GPU_LABEL="$GPU_LABEL"
 export MESA_NO_ERROR=1
-export MESA_GL_VERSION_OVERRIDE=4.6
 export MESA_GLES_VERSION_OVERRIDE=3.2
-export GALLIUM_DRIVER=zink
-export MESA_LOADER_DRIVER_OVERRIDE=zink
-export TU_DEBUG=noconform
-export MESA_VK_WSI_PRESENT_MODE=immediate
-export ZINK_DESCRIPTORS=lazy
 export XDG_DATA_DIRS=/data/data/com.termux/files/usr/share:\${XDG_DATA_DIRS}
 export XDG_CONFIG_DIRS=/data/data/com.termux/files/usr/etc/xdg:\${XDG_CONFIG_DIRS}
 EOF
+
+    if [ "$GPU_PROFILE" = "mali_virgl" ]; then
+        cat >> ~/.config/linux-gpu.sh << 'EOF'
+# Huawei/Kirin/Mali patch: use VirGL over Android GLES, not native Zink over Vulkan.
+export GALLIUM_DRIVER=virpipe
+export MESA_GL_VERSION_OVERRIDE=4.0
+export LIBGL_DRI3_DISABLE=1
+unset MESA_LOADER_DRIVER_OVERRIDE
+unset VK_ICD_FILENAMES
+unset TU_DEBUG
+unset ZINK_DESCRIPTORS
+EOF
+    elif [ "$GPU_PROFILE" = "adreno_zink" ]; then
+        cat >> ~/.config/linux-gpu.sh << 'EOF'
+export GALLIUM_DRIVER=zink
+export MESA_LOADER_DRIVER_OVERRIDE=zink
+export MESA_GL_VERSION_OVERRIDE=4.6
+export TU_DEBUG=noconform
+export MESA_VK_WSI_PRESENT_MODE=immediate
+export ZINK_DESCRIPTORS=lazy
+EOF
+    else
+        cat >> ~/.config/linux-gpu.sh << 'EOF'
+export LIBGL_ALWAYS_SOFTWARE=1
+export GALLIUM_DRIVER=llvmpipe
+export MESA_GL_VERSION_OVERRIDE=4.5
+unset MESA_LOADER_DRIVER_OVERRIDE
+unset VK_ICD_FILENAMES
+unset TU_DEBUG
+unset ZINK_DESCRIPTORS
+EOF
+    fi
+
+    cat > ~/.config/termux-gpu-common.sh << 'EOF'
+#!/data/data/com.termux/files/usr/bin/bash
+TERMUX_TMP="${TMPDIR:-/data/data/com.termux/files/usr/tmp}"
+source "$HOME/.config/linux-gpu.sh" 2>/dev/null || true
+
+start_virgl_server() {
+    [ "${TERMUX_GPU_PROFILE:-}" = "mali_virgl" ] || return 0
+    command -v virgl_test_server_android >/dev/null 2>&1 || {
+        echo "[!] virgl_test_server_android not found. Try: pkg install virglrenderer-android"
+        return 1
+    }
+
+    if pgrep -f "virgl_test_server_android" >/dev/null 2>&1; then
+        return 0
+    fi
+
+    mkdir -p "$TERMUX_TMP"
+    LOG="$TERMUX_TMP/virgl-kirin.log"
+    ARGS=""
+    virgl_test_server_android --help 2>&1 | grep -q -- '--use-egl-surfaceless' && ARGS="--use-egl-surfaceless"
+
+    echo "[*] Starting VirGL Android renderer for Kirin/Mali... log: $LOG"
+    (
+        while true; do
+            echo "[$(date)] virgl_test_server_android $ARGS" >> "$LOG"
+            virgl_test_server_android $ARGS >> "$LOG" 2>&1
+            echo "[$(date)] VirGL exited; restarting in 2s" >> "$LOG"
+            sleep 2
+        done
+    ) &
+    echo $! > "$TERMUX_TMP/virgl-watchdog.pid"
+    sleep 1
+}
+
+stop_virgl_server() {
+    [ -f "$TERMUX_TMP/virgl-watchdog.pid" ] && kill "$(cat "$TERMUX_TMP/virgl-watchdog.pid")" 2>/dev/null || true
+    rm -f "$TERMUX_TMP/virgl-watchdog.pid" 2>/dev/null
+    pkill -f "virgl_test_server_android" 2>/dev/null || true
+}
+EOF
+    chmod +x ~/.config/termux-gpu-common.sh
 
     if [ "$DE_CHOICE" == "4" ]; then
         echo "export KWIN_COMPOSE=O2ES" >> ~/.config/linux-gpu.sh
@@ -581,6 +810,7 @@ echo "  [*] Starting ${DE_NAME} via Termux-X11..."
 echo "=============================================="
 echo ""
 source ~/.config/linux-gpu.sh 2>/dev/null
+source ~/.config/termux-gpu-common.sh 2>/dev/null
 
 # Override Android's u0_a281 with the custom username
 # XFCE panel reads USER/LOGNAME for all user-facing displays
@@ -589,6 +819,7 @@ export LOGNAME="$SETUP_USERNAME"
 export HOSTNAME="android-linux"
 export HOST="android-linux"
 
+stop_virgl_server 2>/dev/null || true
 pkill -9 -f "termux.x11" 2>/dev/null
 pkill -9 -f "Xvnc" 2>/dev/null
 ${KILL_CMD}
@@ -603,8 +834,11 @@ sleep 1
 pactl load-module module-native-protocol-tcp auth-ip-acl=127.0.0.1 auth-anonymous=1 2>/dev/null
 export PULSE_SERVER=127.0.0.1
 
+# Huawei/Kirin/Mali: start VirGL before desktop clients connect.
+start_virgl_server 2>/dev/null || true
+
 echo "[*] Starting Termux-X11 on :0..."
-termux-x11 :0 -ac &
+termux-x11 :0 -ac ${TERMUX_X11_EXTRA_ARGS:-} &
 sleep 3
 export DISPLAY=:0
 
@@ -624,13 +858,15 @@ LAUNCHEREOF
     cat > ~/stop-linux.sh << STOPEOF
 #!/data/data/com.termux/files/usr/bin/bash
 echo "Stopping all sessions..."
+source ~/.config/termux-gpu-common.sh 2>/dev/null
+stop_virgl_server 2>/dev/null || true
 pkill -9 -f "termux.x11" 2>/dev/null
 vncserver -kill :1 2>/dev/null
 pkill -9 -f "Xvnc" 2>/dev/null
 pkill -9 -f "pulseaudio" 2>/dev/null
 ${KILL_CMD}
 pkill -9 -f "dbus" 2>/dev/null
-rm -f /tmp/.X1-lock /tmp/.X11-unix/X1 2>/dev/null
+rm -f /tmp/.X1-lock /tmp/.X11-unix/X1 /tmp/.virgl_test /tmp/virgl_test* 2>/dev/null
 echo "Done."
 STOPEOF
     chmod +x ~/stop-linux.sh
@@ -679,7 +915,7 @@ XSEOF
   <property name="general" type="empty">
     <property name="theme" type="string" value="Default-xhdpi"/>
     <property name="title_font" type="string" value="Sans Bold 10"/>
-    <property name="use_compositing" type="bool" value="true"/>
+    <property name="use_compositing" type="bool" value="false"/>
     <property name="frame_opacity" type="int" value="95"/>
     <property name="inactive_opacity" type="int" value="90"/>
     <property name="popup_opacity" type="int" value="95"/>
@@ -801,8 +1037,15 @@ if [ -f "$WALLPAPER" ]; then
 fi
 
 # ---- Compositing tuning ----
-xfconf-query -c xfwm4 -p /general/use_compositing -s true 2>/dev/null || true
-xfconf-query -c xfwm4 -p /general/frame_opacity -t int -s 95 2>/dev/null || true
+source "$HOME/.config/linux-gpu.sh" 2>/dev/null || true
+if [ "${TERMUX_GPU_PROFILE:-}" = "mali_virgl" ]; then
+    # Kirin/Mali + Termux:X11 is less likely to freeze without XFWM compositor.
+    xfconf-query -c xfwm4 -p /general/use_compositing -s false 2>/dev/null || true
+    xfconf-query -c xfwm4 -p /general/frame_opacity -t int -s 100 2>/dev/null || true
+else
+    xfconf-query -c xfwm4 -p /general/use_compositing -s true 2>/dev/null || true
+    xfconf-query -c xfwm4 -p /general/frame_opacity -t int -s 95 2>/dev/null || true
+fi
 
 # ---- Remove this autostart so it never runs again ----
 rm -f "$HOME/.config/autostart/xfce-first-run.desktop"
@@ -952,15 +1195,14 @@ step_vnc_optional() {
 
         cat > ~/.vnc/xstartup << VNCSTARTUP
 #!/data/data/com.termux/files/usr/bin/bash
-export MESA_NO_ERROR=1
-export MESA_GL_VERSION_OVERRIDE=4.6
-export MESA_GLES_VERSION_OVERRIDE=3.2
-export GALLIUM_DRIVER=zink
-export MESA_LOADER_DRIVER_OVERRIDE=zink
-export TU_DEBUG=noconform
-export ZINK_DESCRIPTORS=lazy
-export XDG_DATA_DIRS=/data/data/com.termux/files/usr/share:\${XDG_DATA_DIRS}
-export XDG_CONFIG_DIRS=/data/data/com.termux/files/usr/etc/xdg:\${XDG_CONFIG_DIRS}
+source ~/.config/linux-gpu.sh 2>/dev/null || true
+# VNC does not use Termux:X11. On Kirin/Mali keep VNC stable with llvmpipe.
+if [ "${TERMUX_GPU_PROFILE:-}" = "mali_virgl" ]; then
+    export LIBGL_ALWAYS_SOFTWARE=1
+    export GALLIUM_DRIVER=llvmpipe
+    export MESA_GL_VERSION_OVERRIDE=4.5
+    unset MESA_LOADER_DRIVER_OVERRIDE
+fi
 $VNC_EXEC
 VNCSTARTUP
         chmod +x ~/.vnc/xstartup
@@ -975,7 +1217,7 @@ echo ""
 
 pkill -9 -f "termux.x11" 2>/dev/null
 vncserver -kill ${VNC_DISPLAY} 2>/dev/null
-rm -f /tmp/.X1-lock /tmp/.X11-unix/X1 2>/dev/null
+rm -f /tmp/.X1-lock /tmp/.X11-unix/X1 /tmp/.virgl_test /tmp/virgl_test* 2>/dev/null
 
 unset PULSE_SERVER
 pulseaudio --kill 2>/dev/null
@@ -1019,7 +1261,7 @@ COMPLETE
     echo ""
     echo -e "${CYAN}[*] Installed:${NC}"
     echo "    - Firefox, Git, Python 3"
-    echo "    - GPU Acceleration (Turnip/Zink)"
+    echo "    - GPU Profile: ${GPU_LABEL}"
     echo "    - Proot Linux Container + App Bridge"
     echo "    - Modern Dark XFCE Theme (Adwaita + Dracula terminal)"
     echo ""
@@ -1041,6 +1283,10 @@ COMPLETE
     echo ""
     echo -e "  ${GREEN}Install proot app → sync to XFCE menu:${NC}"
     echo -e "    ${WHITE}bash ~/proot-menu-sync.sh${NC}"
+    echo ""
+    echo -e "  ${GREEN}Check renderer after start:${NC}"
+    echo -e "    ${WHITE}glxinfo -B 2>/dev/null | grep -E 'OpenGL renderer|OpenGL vendor'${NC}"
+    echo -e "    ${WHITE}cat \${TMPDIR:-/data/data/com.termux/files/usr/tmp}/virgl-kirin.log${NC}  ${YELLOW}(Kirin/Mali only)${NC}"
     echo ""
     echo -e "  ${GREEN}Stop everything:${NC}"
     echo -e "    ${WHITE}bash ~/stop-linux.sh${NC}"
