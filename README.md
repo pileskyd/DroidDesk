@@ -1,4 +1,4 @@
-# DroidDesk
+# FORK: DroidDesk
 
 Run a full Linux desktop on any Android phone. Not a terminal. Not an emulator. A complete desktop environment with direct kernel access -- VS Code, Blender, Metasploit, local AI, all of it.
 
@@ -73,7 +73,7 @@ Install it on your phone. This is the display server that renders the desktop.
 Open Termux and run:
 
 ```bash
-curl -sL https://raw.githubusercontent.com/orailnoor/DroidDesk/main/termux-linux-setup.sh -o setup.sh
+curl -sL https://raw.githubusercontent.com/pileskyd/DroidDesk/main/termux-linux-setup.sh -o setup.sh
 bash setup.sh
 ```
 
@@ -131,7 +131,7 @@ sudo apt install realvnc-vnc-viewer
 Copy `pi-launch_phone.sh` to your Pi:
 
 ```bash
-curl -sL https://raw.githubusercontent.com/orailnoor/DroidDesk/main/pi-launch_phone.sh -o ~/pi-launch_phone.sh
+curl -sL https://raw.githubusercontent.com/pileskyd/DroidDesk/main/pi-launch_phone.sh -o ~/pi-launch_phone.sh
 chmod +x ~/pi-launch_phone.sh
 ```
 
