@@ -19,7 +19,9 @@ class HomeScreen extends StatelessWidget {
 
     return Scaffold(
       body: Container(
-        decoration: const BoxDecoration(gradient: DroidTheme.backgroundGradient),
+        decoration: const BoxDecoration(
+          gradient: DroidTheme.backgroundGradient,
+        ),
         child: SafeArea(
           child: CustomScrollView(
             slivers: [
@@ -88,9 +90,7 @@ class HomeScreen extends StatelessWidget {
                   child: Text(
                     'QUICK ACTIONS',
                     style: DroidTheme.label,
-                  )
-                      .animate()
-                      .fadeIn(delay: 200.ms, duration: 400.ms),
+                  ).animate().fadeIn(delay: 200.ms, duration: 400.ms),
                 ),
               ),
 
@@ -98,101 +98,133 @@ class HomeScreen extends StatelessWidget {
                 child: Padding(
                   padding: const EdgeInsets.fromLTRB(24, 12, 24, 0),
                   child: Column(
-                    children: [
-                      // ── Install Desktop ──
-                      _ActionCard(
-                        icon: Icons.download_rounded,
-                        title: 'Install ${state.selectedDE.toUpperCase()}',
-                        subtitle: state.isExtracting && state.statusMessage != null 
-                            ? state.statusMessage! 
-                            : 'Install desktop environment packages (one-time setup)',
-                        color: DroidTheme.secondary,
-                        onTap: () {
-                          if (!state.isExtracting) {
-                            state.installDesktopEnvironment();
-                          }
-                        },
-                      ),
-                      
-                      if (state.isExtracting && state.statusMessage != null && state.statusMessage!.contains("Installing"))
-                         Padding(
-                           padding: const EdgeInsets.symmetric(vertical: 8.0, horizontal: 16),
-                           child: ClipRRect(
-                             borderRadius: BorderRadius.circular(4),
-                             child: LinearProgressIndicator(
-                               value: state.extractProgress > 0 ? state.extractProgress : null,
-                               backgroundColor: DroidTheme.surfaceBorder,
-                               color: DroidTheme.primary,
-                               minHeight: 4,
-                             ),
-                           ),
-                         ),
+                    children:
+                        [
+                              // ── Install Desktop ──
+                              _ActionCard(
+                                icon: Icons.download_rounded,
+                                title:
+                                    'Install ${state.selectedDE.toUpperCase()}',
+                                subtitle:
+                                    state.isExtracting &&
+                                        state.statusMessage != null
+                                    ? (state.statusMessage!.contains(
+                                                "Installing",
+                                              ) &&
+                                              state.terminalOutput.isNotEmpty
+                                          ? state.terminalOutput.lastWhere(
+                                              (line) => line.trim().isNotEmpty,
+                                              orElse: () =>
+                                                  state.statusMessage!,
+                                            )
+                                          : state.statusMessage!)
+                                    : 'Install desktop environment packages (one-time setup)',
+                                color: DroidTheme.secondary,
+                                onTap: () {
+                                  if (!state.isExtracting) {
+                                    state.installDesktopEnvironment();
+                                  }
+                                },
+                              ),
 
-                      const SizedBox(height: 10),
+                              if (state.isExtracting &&
+                                  state.statusMessage != null &&
+                                  state.statusMessage!.contains("Installing"))
+                                Padding(
+                                  padding: const EdgeInsets.symmetric(
+                                    vertical: 8.0,
+                                    horizontal: 16,
+                                  ),
+                                  child: ClipRRect(
+                                    borderRadius: BorderRadius.circular(4),
+                                    child: LinearProgressIndicator(
+                                      value: state.extractProgress > 0
+                                          ? state.extractProgress
+                                          : null,
+                                      backgroundColor: DroidTheme.surfaceBorder,
+                                      color: DroidTheme.primary,
+                                      minHeight: 4,
+                                    ),
+                                  ),
+                                ),
 
-                      // ── Launch Desktop ──
-                      _ActionCard(
-                        icon: Icons.desktop_mac_rounded,
-                        title: state.isRunning ? 'Stop Desktop' : 'Launch Desktop',
-                        subtitle: state.isRunning
-                            ? 'XFCE is running · Tap to stop'
-                            : 'Start ${state.selectedDE.toUpperCase()} desktop environment',
-                        color: state.isRunning ? DroidTheme.error : DroidTheme.primary,
-                        gradient: state.isRunning
-                            ? null
-                            : DroidTheme.primaryGradient,
-                        onTap: () async {
-                          if (!state.isRunning) {
-                            await state.startLinux(mode: 'vnc');
-                          }
-                          if (context.mounted) {
-                            Navigator.push(
-                              context,
-                              MaterialPageRoute(builder: (_) => const VncDesktopScreen()),
-                            );
-                          }
-                        },
-                      ),
+                              const SizedBox(height: 10),
 
-                      const SizedBox(height: 10),
+                              // ── Launch Desktop ──
+                              _ActionCard(
+                                icon: Icons.desktop_mac_rounded,
+                                title: state.isRunning
+                                    ? 'Stop Desktop'
+                                    : 'Launch Desktop',
+                                subtitle: state.isRunning
+                                    ? 'XFCE is running · Tap to stop'
+                                    : 'Start ${state.selectedDE.toUpperCase()} desktop environment',
+                                color: state.isRunning
+                                    ? DroidTheme.error
+                                    : DroidTheme.primary,
+                                gradient: state.isRunning
+                                    ? null
+                                    : DroidTheme.primaryGradient,
+                                onTap: () async {
+                                  if (state.isRunning) {
+                                    state.stopLinux();
+                                  } else {
+                                    await state.startLinux(mode: 'vnc');
+                                    if (context.mounted) {
+                                      Navigator.push(
+                                        context,
+                                        MaterialPageRoute(
+                                          builder: (_) =>
+                                              const VncDesktopScreen(),
+                                        ),
+                                      );
+                                    }
+                                  }
+                                },
+                              ),
 
-                      // ── Terminal ──
-                      _ActionCard(
-                        icon: Icons.terminal_rounded,
-                        title: 'Terminal',
-                        subtitle: 'Open a Linux shell in the proot environment',
-                        color: DroidTheme.secondary,
-                        onTap: () => _showTerminal(context, state),
-                      ),
+                              const SizedBox(height: 10),
 
-                      const SizedBox(height: 10),
+                              // ── Terminal ──
+                              _ActionCard(
+                                icon: Icons.terminal_rounded,
+                                title: 'Terminal',
+                                subtitle:
+                                    'Open a Linux shell in the proot environment',
+                                color: DroidTheme.secondary,
+                                onTap: () => _showTerminal(context, state),
+                              ),
 
-                      // ── Install Apps ──
-                      Row(
-                        children: [
-                          Expanded(
-                            child: _SmallActionCard(
-                              icon: Icons.add_circle_outline_rounded,
-                              title: 'Install Apps',
-                              color: DroidTheme.accent,
-                              onTap: () => _showAppInstaller(context, state),
-                            ),
-                          ),
-                          const SizedBox(width: 10),
-                          Expanded(
-                            child: _SmallActionCard(
-                              icon: Icons.info_outline_rounded,
-                              title: 'System Info',
-                              color: DroidTheme.warning,
-                              onTap: () => _showSystemInfo(context, state),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ]
-                        .animate(interval: 80.ms)
-                        .fadeIn(delay: 300.ms, duration: 400.ms)
-                        .slideY(begin: 0.05, duration: 400.ms),
+                              const SizedBox(height: 10),
+
+                              // ── Install Apps ──
+                              Row(
+                                children: [
+                                  Expanded(
+                                    child: _SmallActionCard(
+                                      icon: Icons.add_circle_outline_rounded,
+                                      title: 'Install Apps',
+                                      color: DroidTheme.accent,
+                                      onTap: () =>
+                                          _showAppInstaller(context, state),
+                                    ),
+                                  ),
+                                  const SizedBox(width: 10),
+                                  Expanded(
+                                    child: _SmallActionCard(
+                                      icon: Icons.info_outline_rounded,
+                                      title: 'System Info',
+                                      color: DroidTheme.warning,
+                                      onTap: () =>
+                                          _showSystemInfo(context, state),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ]
+                            .animate(interval: 80.ms)
+                            .fadeIn(delay: 300.ms, duration: 400.ms)
+                            .slideY(begin: 0.05, duration: 400.ms),
                   ),
                 ),
               ),
@@ -201,9 +233,10 @@ class HomeScreen extends StatelessWidget {
               SliverToBoxAdapter(
                 child: Padding(
                   padding: const EdgeInsets.fromLTRB(24, 24, 24, 0),
-                  child: Text('SYSTEM', style: DroidTheme.label)
-                      .animate()
-                      .fadeIn(delay: 500.ms, duration: 400.ms),
+                  child: Text(
+                    'SYSTEM',
+                    style: DroidTheme.label,
+                  ).animate().fadeIn(delay: 500.ms, duration: 400.ms),
                 ),
               ),
 
@@ -219,24 +252,37 @@ class HomeScreen extends StatelessWidget {
                     ),
                     child: Column(
                       children: [
-                        _infoRow('Distribution', _distroLabel(state.installedDistro)),
+                        _infoRow(
+                          'Distribution',
+                          _distroLabel(state.installedDistro),
+                        ),
                         _divider(),
                         _infoRow('Desktop', state.selectedDE.toUpperCase()),
                         _divider(),
                         _infoRow('GPU', state.gpuType),
                         _divider(),
-                        _infoRow('Device', '${state.deviceInfo['brand'] ?? ''} ${state.deviceInfo['model'] ?? ''}'),
+                        _infoRow(
+                          'Device',
+                          '${state.deviceInfo['brand'] ?? ''} ${state.deviceInfo['model'] ?? ''}',
+                        ),
                         _divider(),
-                        _infoRow('Android', '${state.deviceInfo['androidVersion'] ?? ''} (SDK ${state.deviceInfo['sdkVersion'] ?? ''})'),
+                        _infoRow(
+                          'Android',
+                          '${state.deviceInfo['androidVersion'] ?? ''} (SDK ${state.deviceInfo['sdkVersion'] ?? ''})',
+                        ),
                         _divider(),
-                        _infoRow('RAM', '${state.deviceInfo['totalRamMB'] ?? 'N/A'} MB'),
+                        _infoRow(
+                          'RAM',
+                          '${state.deviceInfo['totalRamMB'] ?? 'N/A'} MB',
+                        ),
                         _divider(),
-                        _infoRow('Storage Free', '${state.deviceInfo['availableStorageMB'] ?? 'N/A'} MB'),
+                        _infoRow(
+                          'Storage Free',
+                          '${state.deviceInfo['availableStorageMB'] ?? 'N/A'} MB',
+                        ),
                       ],
                     ),
-                  )
-                      .animate()
-                      .fadeIn(delay: 600.ms, duration: 400.ms),
+                  ).animate().fadeIn(delay: 600.ms, duration: 400.ms),
                 ),
               ),
             ],
@@ -291,7 +337,9 @@ class HomeScreen extends StatelessWidget {
                 Text(
                   state.isRunning ? 'Desktop Active' : 'Desktop Idle',
                   style: DroidTheme.headingSm.copyWith(
-                    color: state.isRunning ? DroidTheme.accent : DroidTheme.textPrimary,
+                    color: state.isRunning
+                        ? DroidTheme.accent
+                        : DroidTheme.textPrimary,
                   ),
                 ),
                 const SizedBox(height: 2),
@@ -365,7 +413,10 @@ class HomeScreen extends StatelessWidget {
             Text('Settings', style: DroidTheme.headingLg),
             const SizedBox(height: 20),
             ListTile(
-              leading: const Icon(Icons.battery_charging_full, color: DroidTheme.warning),
+              leading: const Icon(
+                Icons.battery_charging_full,
+                color: DroidTheme.warning,
+              ),
               title: const Text('Battery Optimization'),
               subtitle: const Text('Disable to prevent session killing'),
               onTap: () {
@@ -444,11 +495,17 @@ class HomeScreen extends StatelessWidget {
               ),
               child: Row(
                 children: [
-                  const Icon(Icons.terminal, size: 16, color: DroidTheme.secondary),
+                  const Icon(
+                    Icons.terminal,
+                    size: 16,
+                    color: DroidTheme.secondary,
+                  ),
                   const SizedBox(width: 8),
                   Text(
                     'apt install <package-name>',
-                    style: DroidTheme.mono.copyWith(color: DroidTheme.secondary),
+                    style: DroidTheme.mono.copyWith(
+                      color: DroidTheme.secondary,
+                    ),
                   ),
                 ],
               ),
@@ -468,7 +525,10 @@ class HomeScreen extends StatelessWidget {
         borderRadius: BorderRadius.circular(8),
         border: Border.all(color: DroidTheme.surfaceBorder),
       ),
-      child: Text(name, style: DroidTheme.bodySm.copyWith(color: DroidTheme.textSecondary)),
+      child: Text(
+        name,
+        style: DroidTheme.bodySm.copyWith(color: DroidTheme.textSecondary),
+      ),
     );
   }
 
@@ -484,7 +544,6 @@ class HomeScreen extends StatelessWidget {
     );
   }
 }
-
 
 /// Simple terminal bottom sheet with command execution.
 class _TerminalSheet extends StatefulWidget {
@@ -505,7 +564,7 @@ class _TerminalSheetState extends State<_TerminalSheet> {
     // Auto-scroll when new output arrives via state listener
     widget.state.addListener(_onStateChanged);
   }
-  
+
   void _onStateChanged() {
     if (!mounted) return;
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -563,22 +622,35 @@ class _TerminalSheetState extends State<_TerminalSheet> {
               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
               child: Row(
                 children: [
-                  const Icon(Icons.terminal, size: 18, color: DroidTheme.secondary),
+                  const Icon(
+                    Icons.terminal,
+                    size: 18,
+                    color: DroidTheme.secondary,
+                  ),
                   const SizedBox(width: 8),
                   Text('Terminal', style: DroidTheme.headingSm),
                   const Spacer(),
                   // Stop Command Button
                   IconButton(
-                    icon: const Icon(Icons.stop_circle_rounded, color: DroidTheme.error, size: 20),
+                    icon: const Icon(
+                      Icons.stop_circle_rounded,
+                      color: DroidTheme.error,
+                      size: 20,
+                    ),
                     onPressed: () {
                       widget.state.interruptCommand();
-                      widget.state.appendTerminalOutput('\n^C (Command interrupted)\n');
+                      widget.state.appendTerminalOutput(
+                        '\n^C (Command interrupted)\n',
+                      );
                     },
                     tooltip: 'Interrupt Command (Ctrl+C)',
                     splashRadius: 20,
                   ),
                   const SizedBox(width: 8),
-                  Text('proot · ${widget.state.installedDistro}', style: DroidTheme.monoSm),
+                  Text(
+                    'proot · ${widget.state.installedDistro}',
+                    style: DroidTheme.monoSm,
+                  ),
                 ],
               ),
             ),
@@ -610,11 +682,16 @@ class _TerminalSheetState extends State<_TerminalSheet> {
               padding: const EdgeInsets.fromLTRB(12, 8, 8, 16),
               decoration: const BoxDecoration(
                 color: Color(0xFF0D0D0D),
-                border: Border(top: BorderSide(color: DroidTheme.surfaceBorder)),
+                border: Border(
+                  top: BorderSide(color: DroidTheme.surfaceBorder),
+                ),
               ),
               child: Row(
                 children: [
-                  Text('\$ ', style: DroidTheme.mono.copyWith(color: DroidTheme.accent)),
+                  Text(
+                    '\$ ',
+                    style: DroidTheme.mono.copyWith(color: DroidTheme.accent),
+                  ),
                   Expanded(
                     child: TextField(
                       controller: _controller,
@@ -635,7 +712,10 @@ class _TerminalSheetState extends State<_TerminalSheet> {
                     icon: const Icon(Icons.send_rounded, size: 20),
                     color: DroidTheme.primary,
                     padding: EdgeInsets.zero,
-                    constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
+                    constraints: const BoxConstraints(
+                      minWidth: 36,
+                      minHeight: 36,
+                    ),
                   ),
                 ],
               ),
@@ -683,9 +763,7 @@ class _ActionCard extends StatelessWidget {
               : null,
           color: gradient == null ? DroidTheme.cardBg : null,
           borderRadius: BorderRadius.circular(DroidTheme.radiusMd),
-          border: Border.all(
-            color: color.withValues(alpha: 0.3),
-          ),
+          border: Border.all(color: color.withValues(alpha: 0.3)),
         ),
         child: Row(
           children: [
@@ -704,8 +782,12 @@ class _ActionCard extends StatelessWidget {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(title, style: DroidTheme.headingSm),
-                  const SizedBox(height: 2),
-                  Text(subtitle, style: DroidTheme.bodySm),
+                  Text(
+                    subtitle,
+                    style: DroidTheme.bodySm,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                  ),
                 ],
               ),
             ),
@@ -745,7 +827,12 @@ class _SmallActionCard extends StatelessWidget {
           children: [
             Icon(icon, color: color, size: 24),
             const SizedBox(height: 8),
-            Text(title, style: DroidTheme.bodySm.copyWith(color: DroidTheme.textSecondary)),
+            Text(
+              title,
+              style: DroidTheme.bodySm.copyWith(
+                color: DroidTheme.textSecondary,
+              ),
+            ),
           ],
         ),
       ),

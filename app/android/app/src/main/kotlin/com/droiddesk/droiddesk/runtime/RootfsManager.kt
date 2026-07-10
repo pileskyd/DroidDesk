@@ -393,11 +393,30 @@ class RootfsManager(private val context: Context) {
                     "DEBIAN_FRONTEND=noninteractive TZ=Etc/UTC apt-get install -y --no-install-recommends $packages", onLog
                 )
 
-                onProgress(0.8, "Installing core utilities...")
+                onProgress(0.8, "Installing core utilities and VNC...")
                 val result = runtime.executeCommand(
                     "DEBIAN_FRONTEND=noninteractive TZ=Etc/UTC apt-get install -y --no-install-recommends " +
-                    "git wget curl python3 python3-pip htop nano sudo libgl1", onLog
+                    "git wget curl python3 python3-pip htop nano sudo libgl1 tigervnc-standalone-server tigervnc-common tigervnc-tools x11-xserver-utils", onLog
                 )
+
+                onProgress(0.9, "Configuring display server...")
+                runtime.executeCommand("""
+                    export PATH=${'$'}PATH:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+                    mkdir -p ~/.vnc
+                    echo "password" | vncpasswd -f > ~/.vnc/passwd
+                    chmod 600 ~/.vnc/passwd
+                    
+                    cat << 'EOF' > ~/.vnc/xstartup
+                    #!/bin/sh
+                    export DISPLAY=:0
+                    export LIBGL_ALWAYS_SOFTWARE=1
+                    export GALLIUM_DRIVER=llvmpipe
+                    export MESA_LOADER_DRIVER_OVERRIDE=llvmpipe
+                    xrdb ${'$'}HOME/.Xresources || true
+                    exec startxfce4
+                    EOF
+                    chmod +x ~/.vnc/xstartup
+                """.trimIndent(), onLog)
                 
                 if (result.contains("E: ")) {
                     throw Exception("Apt-get failed: Check terminal output.")

@@ -106,14 +106,18 @@ class LinuxRuntime(private val context: Context) {
             export NO_AT_BRIDGE=1
             export GTK_A11Y=none
 
+            # Auto-heal missing VNC utilities if the user skipped a fresh install
+            export PATH=${'$'}PATH:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+            if ! command -v vncpasswd &> /dev/null; then
+                echo "DIAG: Missing vncpasswd, auto-healing..."
+                DEBIAN_FRONTEND=noninteractive apt-get update >/dev/null 2>&1
+                DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends tigervnc-common tigervnc-tools >/dev/null 2>&1
+            fi
+
+            # Ensure VNC config exists (takes milliseconds, offline)
             export XDG_RUNTIME_DIR=/tmp/run/user/0
             mkdir -p /tmp/run/user/0
-
-            echo "DIAG: Installing VNC Server..."
-            DEBIAN_FRONTEND=noninteractive apt-get update >/dev/null 2>&1 || true
-            DEBIAN_FRONTEND=noninteractive apt-get install -y tigervnc-standalone-server x11-xserver-utils >/dev/null 2>&1 || true
             
-            echo "DIAG: Configuring VNC Server..."
             mkdir -p ~/.vnc
             echo "password" | vncpasswd -f > ~/.vnc/passwd
             chmod 600 ~/.vnc/passwd
