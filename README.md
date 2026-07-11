@@ -30,6 +30,16 @@ The setup script installs a full desktop (XFCE4/LXQt/MATE/KDE) inside Termux usi
 
 The automatic menu sync scans what you install inside Proot and adds it directly to your desktop app menu. No need to enter the container every time.
 
+## DroidDesk App (Standalone)
+
+DroidDesk is also available as a standalone Android application that completely automates this process without requiring Termux. It bundles a containerized Linux root filesystem and uses an integrated VNC client to render the desktop locally. 
+
+- **Automated Setup:** No scripts required. The app handles PRoot execution, filesystem downloads, and desktop configuration automatically.
+- **Out-of-the-box Execution:** Automated binary patching allows complex applications like VS Code to run flawlessly on unrooted devices.
+- **Limitations:** The standalone app currently relies entirely on `llvmpipe` (CPU-based software rendering) because Android's hardware isolation restricts direct `/dev/dri/` GPU access. While highly optimized, graphical applications are bound by your CPU's capabilities.
+
+Download the latest release APK from the Releases tab and sideload it to begin.
+
 ## Requirements
 
 - Any Android phone (ARM64)
