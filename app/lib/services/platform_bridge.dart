@@ -76,14 +76,27 @@ class DroidDeskPlatform {
     await _channel.invokeMethod('extractRootfs');
   }
 
-  static Future<void> installDesktopEnvironment(String distro) async {
-    await _channel.invokeMethod('installDesktopEnvironment', {'de': distro});
+  static Future<void> installDesktopEnvironment(String distro, {String type = 'minimal'}) async {
+    await _channel.invokeMethod('installDesktopEnvironment', {
+      'de': distro,
+      'type': type,
+    });
   }
 
   // ── Linux Session ──
 
-  static Future<void> startLinux({String de = 'xfce4', String mode = 'vnc'}) async {
-    await _channel.invokeMethod('startLinux', {'de': de, 'mode': mode});
+  static Future<void> startLinux({
+    String de = 'xfce4',
+    String mode = 'vnc',
+    int width = 1920,
+    int height = 1080,
+  }) async {
+    await _channel.invokeMethod('startLinux', {
+      'de': de,
+      'mode': mode,
+      'width': width,
+      'height': height,
+    });
   }
 
   static Future<void> stopLinux() async {

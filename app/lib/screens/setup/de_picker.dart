@@ -114,7 +114,7 @@ class DEPickerScreen extends StatelessWidget {
                 Expanded(
                   child: ListView.separated(
                     itemCount: _desktops.length,
-                    separatorBuilder: (_, __) => const SizedBox(height: 10),
+                    separatorBuilder: (context, index) => const SizedBox(height: 10),
                     itemBuilder: (context, index) {
                       final de = _desktops[index];
                       final selected = state.selectedDE == de.id;
@@ -142,9 +142,9 @@ class DEPickerScreen extends StatelessWidget {
                         onPressed: () {
                           Navigator.of(context).push(
                             PageRouteBuilder(
-                              pageBuilder: (_, __, ___) =>
+                              pageBuilder: (context, animation, secondaryAnimation) =>
                                   const SetupProgressScreen(),
-                              transitionsBuilder: (_, animation, __, child) {
+                              transitionsBuilder: (context, animation, secondaryAnimation, child) {
                                 return FadeTransition(
                                   opacity: animation,
                                   child: child,

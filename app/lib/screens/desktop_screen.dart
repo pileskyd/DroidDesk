@@ -16,8 +16,7 @@ class DesktopScreen extends StatefulWidget {
 }
 
 class _DesktopScreenState extends State<DesktopScreen> {
-  static const StandardMessageCodec _decoder = StandardMessageCodec();
-  
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -55,7 +54,7 @@ class _DesktopScreenState extends State<DesktopScreen> {
             top: MediaQuery.of(context).padding.top + 16,
             right: 16,
             child: FloatingActionButton.small(
-              backgroundColor: DroidTheme.cardGradient.colors.first.withOpacity(0.8),
+              backgroundColor: DroidTheme.cardGradient.colors.first.withValues(alpha: 0.8),
               onPressed: () {
                 // Return to home screen
                 Navigator.of(context).pop();

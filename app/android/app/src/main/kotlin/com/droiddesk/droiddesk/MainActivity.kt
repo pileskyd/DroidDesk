@@ -49,6 +49,7 @@ class MainActivity : FlutterActivity() {
                         "isBootstrapped" to linuxRuntime.isBootstrapped(),
                         "isRunning" to linuxRuntime.isRunning(),
                         "distro" to rootfsManager.getInstalledDistro(),
+                        "installedDE" to rootfsManager.getInstalledDE(),
                         "rootfsPath" to rootfsManager.getRootfsPath(),
                         "rootfsSizeMB" to rootfsManager.getRootfsSizeMB()
                     ))
@@ -100,8 +101,10 @@ class MainActivity : FlutterActivity() {
                 
                 "installDesktopEnvironment" -> {
                     val desktopEnv = call.argument<String>("de") ?: "xfce4"
+                    val installType = call.argument<String>("type") ?: "minimal"
                     rootfsManager.installDesktopEnvironment(
                         desktopEnv, 
+                        installType,
                         linuxRuntime, 
                         { progress, status ->
                             runOnUiThread {
@@ -127,13 +130,14 @@ class MainActivity : FlutterActivity() {
                     result.success(true)
                 }
 
-                // ── Linux Session ──
                 "startLinux" -> {
                     val desktopEnv = call.argument<String>("de") ?: "xfce4"
                     val mode = call.argument<String>("mode") ?: "vnc"
+                    val width = call.argument<Int>("width") ?: 1920
+                    val height = call.argument<Int>("height") ?: 1080
                     startForegroundService()
                     thread {
-                        linuxRuntime.startSession(desktopEnv, mode)
+                        linuxRuntime.startSession(desktopEnv, mode, width, height)
                     }
                     result.success(true)
                 }

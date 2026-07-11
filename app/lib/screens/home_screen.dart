@@ -5,8 +5,7 @@ import 'package:droiddesk/theme/droid_theme.dart';
 import 'package:droiddesk/state/app_state.dart';
 import 'package:droiddesk/screens/vnc_desktop_screen.dart';
 import 'package:droiddesk/services/platform_bridge.dart';
-import 'package:flutter/services.dart';
-import 'package:droiddesk/screens/desktop_screen.dart';
+import 'package:droiddesk/screens/setup/de_install_screen.dart';
 
 /// Home dashboard — shown after setup is complete.
 /// Central hub for launching the desktop, terminal, and managing the environment.
@@ -102,62 +101,64 @@ class HomeScreen extends StatelessWidget {
                         [
                               // ── Install Desktop ──
                               _ActionCard(
-                                icon: Icons.download_rounded,
-                                title:
-                                    'Install ${state.selectedDE.toUpperCase()}',
-                                subtitle:
-                                    state.isExtracting &&
-                                        state.statusMessage != null
-                                    ? (state.statusMessage!.contains(
-                                                "Installing",
-                                              ) &&
-                                              state.terminalOutput.isNotEmpty
-                                          ? state.terminalOutput.lastWhere(
-                                              (line) => line.trim().isNotEmpty,
-                                              orElse: () =>
-                                                  state.statusMessage!,
-                                            )
-                                          : state.statusMessage!)
+                                icon: state.isDEInstalled
+                                    ? Icons.check_circle_rounded
+                                    : Icons.download_rounded,
+                                title: state.isDEInstalled
+                                    ? '${state.installedDE.toUpperCase()} Installed'
+                                    : 'Install ${state.selectedDE.toUpperCase()}',
+                                subtitle: state.isDEInstalled
+                                    ? 'Desktop environment and GUI tools are ready.'
                                     : 'Install desktop environment packages (one-time setup)',
-                                color: DroidTheme.secondary,
-                                onTap: () {
-                                  if (!state.isExtracting) {
-                                    state.installDesktopEnvironment();
-                                  }
-                                },
+                                color: state.isDEInstalled
+                                    ? DroidTheme.success
+                                    : DroidTheme.secondary,
+                                onTap: state.isDEInstalled
+                                    ? () {} // Disabled
+                                    : () {
+                                        Navigator.of(context).push(
+                                          MaterialPageRoute(
+                                            builder: (_) =>
+                                                const DEInstallScreen(),
+                                          ),
+                                        );
+                                      },
                               ),
-
-                              if (state.isExtracting &&
-                                  state.statusMessage != null &&
-                                  state.statusMessage!.contains("Installing"))
-                                Padding(
-                                  padding: const EdgeInsets.symmetric(
-                                    vertical: 8.0,
-                                    horizontal: 16,
-                                  ),
-                                  child: ClipRRect(
-                                    borderRadius: BorderRadius.circular(4),
-                                    child: LinearProgressIndicator(
-                                      value: state.extractProgress > 0
-                                          ? state.extractProgress
-                                          : null,
-                                      backgroundColor: DroidTheme.surfaceBorder,
-                                      color: DroidTheme.primary,
-                                      minHeight: 4,
-                                    ),
-                                  ),
-                                ),
 
                               const SizedBox(height: 10),
 
-                              // ── Launch Desktop ──
+                              // ── Launch Desktop / Reconnect ──
+                              if (state.isRunning)
+                                Padding(
+                                  padding: const EdgeInsets.only(bottom: 10),
+                                  child: _ActionCard(
+                                    icon: Icons.fullscreen_rounded,
+                                    title: 'Return to Desktop',
+                                    subtitle:
+                                        'XFCE is currently running in background',
+                                    color: DroidTheme.primary,
+                                    gradient: DroidTheme.primaryGradient,
+                                    onTap: () {
+                                      Navigator.push(
+                                        context,
+                                        MaterialPageRoute(
+                                          builder: (_) =>
+                                              const VncDesktopScreen(),
+                                        ),
+                                      );
+                                    },
+                                  ),
+                                ),
+
                               _ActionCard(
-                                icon: Icons.desktop_mac_rounded,
+                                icon: state.isRunning
+                                    ? Icons.stop_circle_rounded
+                                    : Icons.desktop_mac_rounded,
                                 title: state.isRunning
-                                    ? 'Stop Desktop'
+                                    ? 'Stop Server'
                                     : 'Launch Desktop',
                                 subtitle: state.isRunning
-                                    ? 'XFCE is running · Tap to stop'
+                                    ? 'Shutdown Linux environment'
                                     : 'Start ${state.selectedDE.toUpperCase()} desktop environment',
                                 color: state.isRunning
                                     ? DroidTheme.error
@@ -169,7 +170,26 @@ class HomeScreen extends StatelessWidget {
                                   if (state.isRunning) {
                                     state.stopLinux();
                                   } else {
-                                    await state.startLinux(mode: 'vnc');
+                                    final size = MediaQuery.of(context).size;
+                                    final double maxDim =
+                                        size.width > size.height
+                                        ? size.width
+                                        : size.height;
+                                    final double minDim =
+                                        size.width < size.height
+                                        ? size.width
+                                        : size.height;
+
+                                    // Calculate exact aspect ratio matching the phone in landscape
+                                    final int vncWidth = 1920;
+                                    final int vncHeight =
+                                        (1920 * (minDim / maxDim)).toInt();
+
+                                    await state.startLinux(
+                                      mode: 'vnc',
+                                      width: vncWidth,
+                                      height: vncHeight,
+                                    );
                                     if (context.mounted) {
                                       Navigator.push(
                                         context,
@@ -567,6 +587,7 @@ class _TerminalSheetState extends State<_TerminalSheet> {
 
   void _onStateChanged() {
     if (!mounted) return;
+    setState(() {});
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (_scrollController.hasClients) {
         _scrollController.animateTo(
@@ -604,123 +625,132 @@ class _TerminalSheetState extends State<_TerminalSheet> {
       maxChildSize: 0.95,
       expand: false,
       builder: (context, scrollCtrl) {
-        return Column(
-          children: [
-            // Handle bar
-            Container(
-              margin: const EdgeInsets.symmetric(vertical: 8),
-              width: 40,
-              height: 4,
-              decoration: BoxDecoration(
-                color: DroidTheme.textDim,
-                borderRadius: BorderRadius.circular(2),
-              ),
-            ),
-
-            // Header
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-              child: Row(
-                children: [
-                  const Icon(
-                    Icons.terminal,
-                    size: 18,
-                    color: DroidTheme.secondary,
-                  ),
-                  const SizedBox(width: 8),
-                  Text('Terminal', style: DroidTheme.headingSm),
-                  const Spacer(),
-                  // Stop Command Button
-                  IconButton(
-                    icon: const Icon(
-                      Icons.stop_circle_rounded,
-                      color: DroidTheme.error,
-                      size: 20,
-                    ),
-                    onPressed: () {
-                      widget.state.interruptCommand();
-                      widget.state.appendTerminalOutput(
-                        '\n^C (Command interrupted)\n',
-                      );
-                    },
-                    tooltip: 'Interrupt Command (Ctrl+C)',
-                    splashRadius: 20,
-                  ),
-                  const SizedBox(width: 8),
-                  Text(
-                    'proot · ${widget.state.installedDistro}',
-                    style: DroidTheme.monoSm,
-                  ),
-                ],
-              ),
-            ),
-
-            const Divider(color: DroidTheme.surfaceBorder, height: 1),
-
-            // Output
-            Expanded(
-              child: ListView.builder(
-                controller: _scrollController,
-                padding: const EdgeInsets.all(12),
-                itemCount: widget.state.terminalOutput.length,
-                itemBuilder: (context, index) {
-                  return Text(
-                    widget.state.terminalOutput[index],
-                    style: DroidTheme.mono.copyWith(
-                      color: widget.state.terminalOutput[index].startsWith('\$')
-                          ? DroidTheme.accent
-                          : DroidTheme.textSecondary,
-                      height: 1.4,
-                    ),
-                  );
-                },
-              ),
-            ),
-
-            // Input
-            Container(
-              padding: const EdgeInsets.fromLTRB(12, 8, 8, 16),
-              decoration: const BoxDecoration(
-                color: Color(0xFF0D0D0D),
-                border: Border(
-                  top: BorderSide(color: DroidTheme.surfaceBorder),
+        return Padding(
+          padding: EdgeInsets.only(
+            bottom: MediaQuery.of(context).viewInsets.bottom,
+          ),
+          child: Column(
+            children: [
+              // Handle bar
+              Container(
+                margin: const EdgeInsets.symmetric(vertical: 8),
+                width: 40,
+                height: 4,
+                decoration: BoxDecoration(
+                  color: DroidTheme.textDim,
+                  borderRadius: BorderRadius.circular(2),
                 ),
               ),
-              child: Row(
-                children: [
-                  Text(
-                    '\$ ',
-                    style: DroidTheme.mono.copyWith(color: DroidTheme.accent),
-                  ),
-                  Expanded(
-                    child: TextField(
-                      controller: _controller,
-                      style: DroidTheme.mono.copyWith(fontSize: 13),
-                      decoration: const InputDecoration(
-                        border: InputBorder.none,
-                        hintText: 'Enter command...',
-                        hintStyle: TextStyle(color: DroidTheme.textDim),
-                        isDense: true,
-                        contentPadding: EdgeInsets.zero,
+
+              // Header
+              Padding(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 16,
+                  vertical: 4,
+                ),
+                child: Row(
+                  children: [
+                    const Icon(
+                      Icons.terminal,
+                      size: 18,
+                      color: DroidTheme.secondary,
+                    ),
+                    const SizedBox(width: 8),
+                    Text('Terminal', style: DroidTheme.headingSm),
+                    const Spacer(),
+                    // Stop Command Button
+                    IconButton(
+                      icon: const Icon(
+                        Icons.stop_circle_rounded,
+                        color: DroidTheme.error,
+                        size: 20,
                       ),
-                      onSubmitted: (_) => _runCommand(),
-                      autofocus: true,
+                      onPressed: () {
+                        widget.state.interruptCommand();
+                        widget.state.appendTerminalOutput(
+                          '\n^C (Command interrupted)\n',
+                        );
+                      },
+                      tooltip: 'Interrupt Command (Ctrl+C)',
+                      splashRadius: 20,
                     ),
-                  ),
-                  IconButton(
-                    onPressed: _runCommand,
-                    icon: const Icon(Icons.send_rounded, size: 20),
-                    color: DroidTheme.primary,
-                    padding: EdgeInsets.zero,
-                    constraints: const BoxConstraints(
-                      minWidth: 36,
-                      minHeight: 36,
+                    const SizedBox(width: 8),
+                    Text(
+                      'proot · ${widget.state.installedDistro}',
+                      style: DroidTheme.monoSm,
                     ),
-                  ),
-                ],
+                  ],
+                ),
               ),
-            ),
-          ],
+
+              const Divider(color: DroidTheme.surfaceBorder, height: 1),
+
+              // Output
+              Expanded(
+                child: ListView.builder(
+                  controller: _scrollController,
+                  padding: const EdgeInsets.all(12),
+                  itemCount: widget.state.terminalOutput.length,
+                  itemBuilder: (context, index) {
+                    return SelectableText(
+                      widget.state.terminalOutput[index],
+                      style: DroidTheme.mono.copyWith(
+                        color:
+                            widget.state.terminalOutput[index].startsWith('\$')
+                            ? DroidTheme.accent
+                            : DroidTheme.textSecondary,
+                        height: 1.4,
+                      ),
+                    );
+                  },
+                ),
+              ),
+
+              // Input
+              Container(
+                padding: const EdgeInsets.fromLTRB(12, 8, 8, 16),
+                decoration: const BoxDecoration(
+                  color: Color(0xFF0D0D0D),
+                  border: Border(
+                    top: BorderSide(color: DroidTheme.surfaceBorder),
+                  ),
+                ),
+                child: Row(
+                  children: [
+                    Text(
+                      '\$ ',
+                      style: DroidTheme.mono.copyWith(color: DroidTheme.accent),
+                    ),
+                    Expanded(
+                      child: TextField(
+                        controller: _controller,
+                        style: DroidTheme.mono.copyWith(fontSize: 13),
+                        decoration: const InputDecoration(
+                          border: InputBorder.none,
+                          hintText: 'Enter command...',
+                          hintStyle: TextStyle(color: DroidTheme.textDim),
+                          isDense: true,
+                          contentPadding: EdgeInsets.zero,
+                        ),
+                        onSubmitted: (_) => _runCommand(),
+                        autofocus: true,
+                      ),
+                    ),
+                    IconButton(
+                      onPressed: _runCommand,
+                      icon: const Icon(Icons.send_rounded, size: 20),
+                      color: DroidTheme.primary,
+                      padding: EdgeInsets.zero,
+                      constraints: const BoxConstraints(
+                        minWidth: 36,
+                        minHeight: 36,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
         );
       },
     );

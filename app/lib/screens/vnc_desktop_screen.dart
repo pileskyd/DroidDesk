@@ -1,7 +1,13 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_rfb/flutter_rfb.dart';
 import 'package:droiddesk/theme/droid_theme.dart';
 
+/// Full-screen VNC desktop viewer with:
+/// - Auto-rotation (landscape support)
+/// - Full-screen direct touch (whole screen = trackpad, like Termux:X11)
+/// - Keyboard toggle button
+/// - Floating overlay control bar
 class VncDesktopScreen extends StatefulWidget {
   const VncDesktopScreen({super.key});
 
@@ -11,21 +17,65 @@ class VncDesktopScreen extends StatefulWidget {
 
 class _VncDesktopScreenState extends State<VncDesktopScreen> {
   bool _showControls = true;
-  bool _connected = true; // We start trying to connect immediately
+  final bool _connected = true;
   int _retryKey = 0;
+  bool _keyboardVisible = false;
+  InputMode _inputMode = InputMode.trackpad;
+  double _trackpadSensitivity = 3.5;
+  final FocusNode _focusNode = FocusNode();
+
+  @override
+  void initState() {
+    super.initState();
+    // Allow all orientations for the desktop viewer
+    SystemChrome.setPreferredOrientations([
+      DeviceOrientation.portraitUp,
+      DeviceOrientation.portraitDown,
+      DeviceOrientation.landscapeLeft,
+      DeviceOrientation.landscapeRight,
+    ]);
+    // Go full-screen immersive
+    SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
+  }
+
+  @override
+  void dispose() {
+    // Restore portrait-only and system UI when leaving
+    SystemChrome.setPreferredOrientations([DeviceOrientation.portraitUp]);
+    SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
+    _focusNode.dispose();
+    super.dispose();
+  }
+
+  void _toggleKeyboard() {
+    setState(() {
+      _keyboardVisible = !_keyboardVisible;
+    });
+    if (_keyboardVisible) {
+      _focusNode.requestFocus();
+      SystemChannels.textInput.invokeMethod('TextInput.show');
+    } else {
+      _focusNode.unfocus();
+      SystemChannels.textInput.invokeMethod('TextInput.hide');
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: Colors.black,
+      resizeToAvoidBottomInset: true,
       body: Stack(
         children: [
-          // The VNC Viewer
-          Center(
-            child: InteractiveViewer(
-              constrained: true,
-              maxScale: 5.0,
-              minScale: 0.5,
+          // ── The VNC Viewer (full screen, pinch-to-zoom) ──
+          Positioned.fill(
+            child: GestureDetector(
+              // Double-tap anywhere to toggle controls
+              onDoubleTap: () {
+                setState(() {
+                  _showControls = !_showControls;
+                });
+              },
               child: Builder(
                 builder: (context) {
                   if (!_connected) {
@@ -36,29 +86,33 @@ class _VncDesktopScreenState extends State<VncDesktopScreen> {
                       ),
                     );
                   }
-                  
+
                   return RemoteFrameBufferWidget(
-                    key: ValueKey(_retryKey), // Force rebuild on retry
+                    key: ValueKey(_retryKey),
                     hostName: '127.0.0.1',
                     port: 5900,
-                    password: 'password', // As configured in our LinuxRuntime bash script
+                    password: 'password',
+                    inputMode: _inputMode,
+                    trackpadSensitivity: _trackpadSensitivity,
                     connectingWidget: Column(
                       mainAxisAlignment: MainAxisAlignment.center,
                       children: [
-                        const CircularProgressIndicator(color: DroidTheme.primary),
+                        const CircularProgressIndicator(
+                          color: DroidTheme.primary,
+                        ),
                         const SizedBox(height: 16),
                         Text(
-                          'Starting VNC Server...',
-                          style: DroidTheme.bodyLg.copyWith(color: Colors.white70),
+                          'Starting Desktop...',
+                          style: DroidTheme.bodyLg.copyWith(
+                            color: Colors.white70,
+                          ),
                         ),
                       ],
                     ),
                     onError: (error) {
                       debugPrint('VNC Connection Error: $error');
-                      // Retry after a delay because proot takes time to spin up
                       Future.delayed(const Duration(seconds: 2), () {
                         if (mounted && _connected) {
-                          // Force a rebuild to retry the connection
                           setState(() {
                             _retryKey++;
                           });
@@ -70,43 +124,21 @@ class _VncDesktopScreenState extends State<VncDesktopScreen> {
               ),
             ),
           ),
-          
-          // Overlay Controls
+
+          // ── Floating Control Bar (top) ──
           if (_showControls)
             Positioned(
-              top: 40, // Safe area roughly
-              left: 16,
-              right: 16,
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  FloatingActionButton.small(
-                    heroTag: 'back_btn',
-                    backgroundColor: DroidTheme.cardBg.withOpacity(0.8),
-                    onPressed: () {
-                      Navigator.pop(context);
-                    },
-                    child: const Icon(Icons.close, color: Colors.white),
-                  ),
-                  FloatingActionButton.small(
-                    heroTag: 'toggle_controls_btn',
-                    backgroundColor: DroidTheme.cardBg.withOpacity(0.8),
-                    onPressed: () {
-                      setState(() {
-                        _showControls = false;
-                      });
-                    },
-                    child: const Icon(Icons.visibility_off, color: Colors.white),
-                  ),
-                ],
-              ),
+              top: MediaQuery.of(context).padding.top + 8,
+              left: 12,
+              right: 12,
+              child: _buildControlBar(),
             ),
-            
-          // Hidden toggle button to bring controls back
+
+          // ── Tap zone to bring controls back (invisible, top-right corner) ──
           if (!_showControls)
             Positioned(
-              top: 40,
-              right: 16,
+              top: 0,
+              right: 0,
               child: GestureDetector(
                 onTap: () {
                   setState(() {
@@ -114,13 +146,165 @@ class _VncDesktopScreenState extends State<VncDesktopScreen> {
                   });
                 },
                 child: Container(
-                  width: 40,
-                  height: 40,
-                  color: Colors.transparent, // Invisible touch target in the corner
+                  width: 60,
+                  height: 60,
+                  color: Colors.transparent,
                 ),
               ),
             ),
         ],
+      ),
+    );
+  }
+
+  Widget _buildControlBar() {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      decoration: BoxDecoration(
+        color: Colors.black.withValues(alpha: 0.7),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(
+          color: DroidTheme.surfaceBorder.withValues(alpha: 0.5),
+        ),
+      ),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          // Back button
+          _controlButton(
+            icon: Icons.close_rounded,
+            tooltip: 'Exit Desktop',
+            onTap: () => Navigator.pop(context),
+          ),
+
+          // Keyboard toggle
+          _controlButton(
+            icon: _keyboardVisible
+                ? Icons.keyboard_hide_rounded
+                : Icons.keyboard_rounded,
+            tooltip: _keyboardVisible ? 'Hide Keyboard' : 'Show Keyboard',
+            onTap: _toggleKeyboard,
+            highlighted: _keyboardVisible,
+          ),
+
+          // Input Mode toggle
+          _controlButton(
+            icon: _inputMode == InputMode.trackpad
+                ? Icons.mouse_rounded
+                : Icons.touch_app_rounded,
+            tooltip: _inputMode == InputMode.trackpad
+                ? 'Switch to Direct Touch'
+                : 'Switch to Trackpad Mode',
+            onTap: () {
+              setState(() {
+                _inputMode = _inputMode == InputMode.trackpad
+                    ? InputMode.direct
+                    : InputMode.trackpad;
+              });
+            },
+            highlighted: _inputMode == InputMode.trackpad,
+          ),
+
+          // Trackpad Settings (only show in trackpad mode)
+          if (_inputMode == InputMode.trackpad)
+            _controlButton(
+              icon: Icons.tune_rounded,
+              tooltip: 'Trackpad Sensitivity',
+              onTap: () {
+                showDialog(
+                  context: context,
+                  builder: (context) {
+                    return StatefulBuilder(
+                      builder: (context, setDialogState) {
+                        return AlertDialog(
+                          backgroundColor: DroidTheme.surface,
+                          title: const Text(
+                            'Pointer Speed',
+                            style: TextStyle(color: Colors.white),
+                          ),
+                          content: SizedBox(
+                            width: 300,
+                            child: Column(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Slider(
+                                  value: _trackpadSensitivity,
+                                  min: 0.5,
+                                  max: 10.0,
+                                  activeColor: DroidTheme.primary,
+                                  onChanged: (val) {
+                                    setDialogState(() {
+                                      _trackpadSensitivity = val;
+                                    });
+                                    setState(() {
+                                      _trackpadSensitivity = val;
+                                    });
+                                  },
+                                ),
+                                Text(
+                                  '${_trackpadSensitivity.toStringAsFixed(1)}x',
+                                  style: const TextStyle(color: Colors.white70),
+                                ),
+                              ],
+                            ),
+                          ),
+                          actions: [
+                            TextButton(
+                              onPressed: () => Navigator.pop(context),
+                              child: const Text(
+                                'Done',
+                                style: TextStyle(color: DroidTheme.primary),
+                              ),
+                            ),
+                          ],
+                        );
+                      },
+                    );
+                  },
+                );
+              },
+            ),
+
+          // Hide controls
+          _controlButton(
+            icon: Icons.visibility_off_rounded,
+            tooltip: 'Hide Controls (double-tap to show)',
+            onTap: () {
+              setState(() {
+                _showControls = false;
+              });
+            },
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _controlButton({
+    required IconData icon,
+    required String tooltip,
+    required VoidCallback onTap,
+    bool highlighted = false,
+  }) {
+    return Tooltip(
+      message: tooltip,
+      child: Material(
+        color: highlighted
+            ? DroidTheme.primary.withValues(alpha: 0.3)
+            : Colors.transparent,
+        borderRadius: BorderRadius.circular(10),
+        child: InkWell(
+          borderRadius: BorderRadius.circular(10),
+          onTap: onTap,
+          child: Padding(
+            padding: const EdgeInsets.all(10),
+            child: Icon(
+              icon,
+              color: highlighted ? DroidTheme.primary : Colors.white70,
+              size: 22,
+            ),
+          ),
+        ),
       ),
     );
   }

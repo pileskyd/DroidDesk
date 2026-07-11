@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:droiddesk/theme/droid_theme.dart';
-import 'package:droiddesk/screens/setup/distro_picker.dart';
+import 'package:droiddesk/screens/setup/install_type_picker.dart';
 
 /// Welcome screen — first thing the user sees.
 /// Premium, animated landing with the DroidDesk brand.
@@ -79,7 +79,7 @@ class WelcomeScreen extends StatelessWidget {
                 const SizedBox(height: 8),
 
                 Text(
-                  'No Termux · No VNC · Single App',
+                  'Ubuntu · XFCE Desktop · Single App',
                   style: DroidTheme.bodySm.copyWith(
                     color: DroidTheme.secondary,
                     fontWeight: FontWeight.w500,
@@ -99,7 +99,7 @@ class WelcomeScreen extends StatelessWidget {
                   children: [
                     _featureChip(Icons.speed_rounded, 'GPU Accelerated'),
                     _featureChip(Icons.security_rounded, 'No Root Needed'),
-                    _featureChip(Icons.desktop_mac_rounded, 'XFCE · LXQt · KDE'),
+                    _featureChip(Icons.desktop_mac_rounded, 'XFCE Desktop'),
                     _featureChip(Icons.memory_rounded, 'Native Performance'),
                   ]
                       .animate(interval: 100.ms)
@@ -117,8 +117,8 @@ class WelcomeScreen extends StatelessWidget {
                     onPressed: () {
                       Navigator.of(context).push(
                         PageRouteBuilder(
-                          pageBuilder: (_, __, ___) => const DistroPickerScreen(),
-                          transitionsBuilder: (_, animation, __, child) {
+                          pageBuilder: (context, animation, secondaryAnimation) => const InstallTypePickerScreen(),
+                          transitionsBuilder: (context, animation, secondaryAnimation, child) {
                             return FadeTransition(
                               opacity: animation,
                               child: SlideTransition(
@@ -148,7 +148,7 @@ class WelcomeScreen extends StatelessWidget {
                       mainAxisAlignment: MainAxisAlignment.center,
                       children: [
                         Text(
-                          'Get Started',
+                          'Install Ubuntu',
                           style: DroidTheme.headingSm.copyWith(
                             color: Colors.white,
                           ),

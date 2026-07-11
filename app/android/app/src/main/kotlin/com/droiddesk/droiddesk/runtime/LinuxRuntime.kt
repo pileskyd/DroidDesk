@@ -81,7 +81,7 @@ class LinuxRuntime(private val context: Context) {
     /**
      * Start a proot Linux session with the specified desktop environment.
      */
-    fun startSession(desktopEnv: String = "xfce4", mode: String = "vnc") {
+    fun startSession(desktopEnv: String = "xfce4", mode: String = "vnc", width: Int = 1920, height: Int = 1080) {
         if (isRunning()) {
             Log.w(TAG, "Session already running")
             return
@@ -128,8 +128,26 @@ class LinuxRuntime(private val context: Context) {
             export LIBGL_ALWAYS_SOFTWARE=1
             export GALLIUM_DRIVER=llvmpipe
             export MESA_LOADER_DRIVER_OVERRIDE=llvmpipe
+            export QT_X11_NO_MITSHM=1
+            export NO_AT_BRIDGE=1
+            export GTK_A11Y=none
+            export SAL_USE_VCLPLUGIN=gen
+            echo "Xft.dpi: 144" > ${'$'}HOME/.Xresources
             xrdb ${'$'}HOME/.Xresources || true
-            exec startxfce4
+            
+            # Patch binaries that refuse to run as root (VLC, Chromium)
+            if [ -f /usr/bin/vlc ] && ! grep -q "getppid" /usr/bin/vlc; then
+                sed -i 's/geteuid/getppid/g' /usr/bin/vlc || true
+            fi
+            if [ -f /usr/bin/google-chrome ] && ! grep -q "getppid" /usr/bin/google-chrome; then
+                sed -i 's/geteuid/getppid/g' /usr/bin/google-chrome || true
+            fi
+
+            if command -v dbus-launch >/dev/null; then
+                exec dbus-launch --exit-with-session startxfce4
+            else
+                exec startxfce4
+            fi
             EOF
             chmod +x ~/.vnc/xstartup
             
@@ -139,7 +157,7 @@ class LinuxRuntime(private val context: Context) {
             
             echo "DIAG: Launching VNC Server on :0 ..."
             # Use VncAuth to ensure compatibility with flutter_rfb
-            vncserver :0 -localhost no -geometry 1080x2400 -depth 24 -SecurityTypes VncAuth
+            vncserver :0 -localhost no -geometry ${width}x${height} -depth 24 -dpi 144 -SecurityTypes VncAuth
             
             echo "DIAG: VNC Server started. Tailing log..."
             tail -f ~/.vnc/*:0.log
@@ -180,6 +198,14 @@ class LinuxRuntime(private val context: Context) {
             """.trimIndent()
         }
 
+        val shmDir = File(context.filesDir, "shm").apply { mkdirs() }
+        
+        // Spoof /proc/version to fix LibreOffice
+        val procVersion = File(context.filesDir, "fake_proc_version")
+        if (!procVersion.exists()) {
+            procVersion.writeText("Linux version 4.19.0 (android@localhost) (gcc version 4.9.x) #1 SMP PREEMPT Thu Jan 1 00:00:00 UTC 1970\n")
+        }
+
         // Build proot command
         val command = mutableListOf(
             prootBin,
@@ -187,8 +213,11 @@ class LinuxRuntime(private val context: Context) {
             "-w", "/root",
             "--bind=/dev",
             "--bind=/proc",
+            "--bind=${procVersion.absolutePath}:/proc/version",
             "--bind=/sys",
             "--bind=${tmpDir.absolutePath}:/tmp",
+            "--bind=${shmDir.absolutePath}:/dev/shm",
+            "--sysvipc",          // Enable sysvipc for shared memory (fixes Chromium/LibreOffice crashes)
             "--root-id",          // Fake root (uid 0)
             "--kill-on-exit",     // Clean up child processes
             "--link2symlink",     // Handle hardlink limitations
@@ -337,6 +366,11 @@ class LinuxRuntime(private val context: Context) {
             "PROOT_LOADER" to File(context.applicationInfo.nativeLibraryDir, "libproot-loader.so").absolutePath,
             "PROOT_NO_SECCOMP" to "1",
             "DISPLAY" to ":0",
+
+            // Firefox / Browser sandboxing fixes for PRoot
+            "MOZ_FAKE_NO_SANDBOX" to "1",
+            "MOZ_DISABLE_CONTENT_SANDBOX" to "1",
+            "MOZ_DISABLE_OOP_LAYER" to "1",
 
             // GPU acceleration (Mesa/Turnip/Zink)
             "MESA_NO_ERROR" to "1",

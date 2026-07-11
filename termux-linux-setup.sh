@@ -122,30 +122,34 @@ setup_environment() {
     fi
     echo ""
 
-    echo -e "${CYAN}Choose your Desktop Environment:${NC}"
-    echo -e "  ${WHITE}1) XFCE4${NC}      — Fast, customizable (Recommended)"
-    echo -e "  ${WHITE}2) LXQt${NC}       — Ultra lightweight"
-    echo -e "  ${WHITE}3) MATE${NC}       — Classic, moderate weight"
-    echo -e "  ${WHITE}4) KDE Plasma${NC} — Heavy, modern (needs strong GPU/RAM)"
-    echo ""
-    while true; do
-        read -p "Enter number (1-4) [default: 1]: " DE_INPUT
-        DE_INPUT=${DE_INPUT:-1}
-        if [[ "$DE_INPUT" =~ ^[1-4]$ ]]; then
-            DE_CHOICE="$DE_INPUT"; break
-        else
-            echo "Please enter 1, 2, 3, or 4."
-        fi
-    done
+    # ── Hardcoded to XFCE4 (DroidDesk default) ──
+    DE_CHOICE="1"
+    DE_NAME="XFCE4"
+    echo -e "${GREEN}[+] Desktop: ${DE_NAME} (default)${NC}"
 
-    case $DE_CHOICE in
-        1) DE_NAME="XFCE4";;
-        2) DE_NAME="LXQt";;
-        3) DE_NAME="MATE";;
-        4) DE_NAME="KDE Plasma";;
-    esac
-
-    echo -e "\n${GREEN}[+] Selected: ${DE_NAME}${NC}"
+    # --- Multi-DE selection (commented out for now) ---
+    # echo -e "${CYAN}Choose your Desktop Environment:${NC}"
+    # echo -e "  ${WHITE}1) XFCE4${NC}      — Fast, customizable (Recommended)"
+    # echo -e "  ${WHITE}2) LXQt${NC}       — Ultra lightweight"
+    # echo -e "  ${WHITE}3) MATE${NC}       — Classic, moderate weight"
+    # echo -e "  ${WHITE}4) KDE Plasma${NC} — Heavy, modern (needs strong GPU/RAM)"
+    # echo ""
+    # while true; do
+    #     read -p "Enter number (1-4) [default: 1]: " DE_INPUT
+    #     DE_INPUT=${DE_INPUT:-1}
+    #     if [[ "$DE_INPUT" =~ ^[1-4]$ ]]; then
+    #         DE_CHOICE="$DE_INPUT"; break
+    #     else
+    #         echo "Please enter 1, 2, 3, or 4."
+    #     fi
+    # done
+    # case $DE_CHOICE in
+    #     1) DE_NAME="XFCE4";;
+    #     2) DE_NAME="LXQt";;
+    #     3) DE_NAME="MATE";;
+    #     4) DE_NAME="KDE Plasma";;
+    # esac
+    # echo -e "\n${GREEN}[+] Selected: ${DE_NAME}${NC}"
 
     # ---- Username ----
     SETUP_USERNAME="root"
@@ -242,6 +246,11 @@ step_apps() {
     install_pkg "wget" "Wget"
     install_pkg "curl" "cURL"
     install_pkg "imagemagick" "ImageMagick (wallpaper)"
+    install_pkg "nodejs" "Node.js"
+    install_pkg "openssh" "OpenSSH"
+    install_pkg "neofetch" "Neofetch"
+    install_pkg "htop" "htop"
+    install_pkg "code-oss" "VS Code (from TUR)"
 }
 
 # ============== STEP 8: PYTHON ==============
@@ -264,23 +273,28 @@ step_proot() {
     install_pkg "proot" "PRoot"
 
     echo ""
-    echo -e "${CYAN}Choose a Linux distro for Proot:${NC}"
-    echo -e "  ${WHITE}1) Ubuntu 22.04 LTS${NC}  (Recommended)"
-    echo -e "  ${WHITE}2) Debian 12${NC}          (Minimal)"
-    echo -e "  ${WHITE}3) Kali Linux${NC}         (Security/Pentesting)"
-    echo ""
-    while true; do
-        read -p "Enter number (1-3) [default: 1]: " PROOT_INPUT
-        PROOT_INPUT=${PROOT_INPUT:-1}
-        if [[ "$PROOT_INPUT" =~ ^[1-3]$ ]]; then break; fi
-        echo "Please enter 1, 2, or 3."
-    done
+    # ── Hardcoded to Ubuntu (DroidDesk default) ──
+    PROOT_DISTRO="ubuntu"
+    PROOT_LABEL="Ubuntu 22.04"
+    echo -e "${GREEN}[+] Proot distro: ${PROOT_LABEL} (default)${NC}"
 
-    case $PROOT_INPUT in
-        1) PROOT_DISTRO="ubuntu";         PROOT_LABEL="Ubuntu 22.04";;
-        2) PROOT_DISTRO="debian";         PROOT_LABEL="Debian 12";;
-        3) PROOT_DISTRO="kali-nethunter"; PROOT_LABEL="Kali Linux";;
-    esac
+    # --- Multi-distro selection (commented out for now) ---
+    # echo -e "${CYAN}Choose a Linux distro for Proot:${NC}"
+    # echo -e "  ${WHITE}1) Ubuntu 22.04 LTS${NC}  (Recommended)"
+    # echo -e "  ${WHITE}2) Debian 12${NC}          (Minimal)"
+    # echo -e "  ${WHITE}3) Kali Linux${NC}         (Security/Pentesting)"
+    # echo ""
+    # while true; do
+    #     read -p "Enter number (1-3) [default: 1]: " PROOT_INPUT
+    #     PROOT_INPUT=${PROOT_INPUT:-1}
+    #     if [[ "$PROOT_INPUT" =~ ^[1-3]$ ]]; then break; fi
+    #     echo "Please enter 1, 2, or 3."
+    # done
+    # case $PROOT_INPUT in
+    #     1) PROOT_DISTRO="ubuntu";         PROOT_LABEL="Ubuntu 22.04";;
+    #     2) PROOT_DISTRO="debian";         PROOT_LABEL="Debian 12";;
+    #     3) PROOT_DISTRO="kali-nethunter"; PROOT_LABEL="Kali Linux";;
+    # esac
 
     echo -e "\n${GREEN}[+] Installing ${PROOT_LABEL}...${NC}"
     (proot-distro install "$PROOT_DISTRO" > /dev/null 2>&1) &

@@ -48,11 +48,16 @@ class RootfsManager(private val context: Context) {
     private val rootfsDir: File get() = File(baseDir, "rootfs")
     private val downloadDir: File get() = File(baseDir, "downloads")
     private val configFile: File get() = File(baseDir, "distro.conf")
+    private val deConfigFile: File get() = File(baseDir, "de.conf")
 
     // ── Status ──
 
     fun getInstalledDistro(): String {
         return if (configFile.exists()) configFile.readText().trim() else ""
+    }
+
+    fun getInstalledDE(): String {
+        return if (deConfigFile.exists()) deConfigFile.readText().trim() else ""
     }
 
     fun getRootfsPath(): String {
@@ -365,26 +370,53 @@ class RootfsManager(private val context: Context) {
      */
     fun installDesktopEnvironment(
         de: String,
+        installType: String,
         runtime: LinuxRuntime,
         onProgress: (Double, String) -> Unit,
         onLog: (String) -> Unit
     ) {
         thread(name = "de-install") {
             try {
+                // Forcefully release any stuck apt locks before starting
+                onProgress(0.0, "Clearing package manager locks...")
+                try {
+                    runtime.executeCommand("""
+                        killall -9 apt apt-get dpkg 2>/dev/null || true
+                        rm -f /var/lib/apt/lists/lock
+                        rm -f /var/cache/apt/archives/lock
+                        rm -f /var/lib/dpkg/lock*
+                        dpkg --configure -a
+                    """.trimIndent(), onLog)
+                } catch (e: Exception) {
+                    Log.w(TAG, "Lock clearing failed, continuing anyway: ${e.message}")
+                }
+                
                 onProgress(0.0, "Updating package lists...")
                 runtime.executeCommand("apt-get update -y", onLog)
+                
+                // Pre-configure Firefox PPA to fix Ubuntu snap issue
+                onProgress(0.1, "Configuring repositories...")
+                runtime.executeCommand("""
+                    DEBIAN_FRONTEND=noninteractive TZ=Etc/UTC apt-get install -y software-properties-common
+                    add-apt-repository ppa:mozillateam/ppa -y
+                    echo "Package: *" > /etc/apt/preferences.d/mozilla-firefox
+                    echo "Pin: release o=LP-PPA-mozillateam" >> /etc/apt/preferences.d/mozilla-firefox
+                    echo "Pin-Priority: 1001" >> /etc/apt/preferences.d/mozilla-firefox
+                    apt-get update -y
+                """.trimIndent(), onLog)
 
-                val packages = when (de) {
+                var packages = when (de) {
                     "xfce4" -> "xfce4 xfce4-terminal xfce4-whiskermenu-plugin thunar mousepad dbus-x11"
                     "lxqt" -> "lxqt qterminal pcmanfm-qt featherpad dbus-x11"
                     "mate" -> "mate-desktop-environment mate-terminal dbus-x11"
                     "kde" -> "plasma-desktop konsole dolphin dbus-x11"
                     else -> "xfce4 xfce4-terminal dbus-x11"
                 }
-
-                // Fix interrupted dpkg if any
-                runtime.executeCommand("DEBIAN_FRONTEND=noninteractive TZ=Etc/UTC dpkg --configure -a", onLog)
                 
+                if (installType == "full") {
+                    packages += " libreoffice gimp inkscape vlc audacity firefox"
+                }
+
                 // Fix broken dependencies from interrupted apt installs
                 runtime.executeCommand("DEBIAN_FRONTEND=noninteractive TZ=Etc/UTC apt-get install -f -y", onLog)
 
@@ -422,6 +454,7 @@ class RootfsManager(private val context: Context) {
                     throw Exception("Apt-get failed: Check terminal output.")
                 }
 
+                deConfigFile.writeText(de)
                 onProgress(1.0, "$de installation complete!")
 
             } catch (e: Exception) {

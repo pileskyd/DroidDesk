@@ -7,8 +7,10 @@ class AppState extends ChangeNotifier {
   bool _isBootstrapped = false;
   bool _isRunning = false;
   String _installedDistro = '';
+  String _installedDE = '';
   String _selectedDistro = 'ubuntu';
   String _selectedDE = 'xfce4';
+  String _installType = 'minimal'; // 'minimal' or 'full'
   int _setupStep = 0; // 0=welcome, 1=distro, 2=de, 3=download, 4=install, 5=done
 
   // ── Download/Install Progress ──
@@ -35,8 +37,10 @@ class AppState extends ChangeNotifier {
   bool get isBootstrapped => _isBootstrapped;
   bool get isRunning => _isRunning;
   String get installedDistro => _installedDistro;
+  String get installedDE => _installedDE;
   String get selectedDistro => _selectedDistro;
   String get selectedDE => _selectedDE;
+  String get installType => _installType;
   int get setupStep => _setupStep;
   double get downloadProgress => _downloadProgress;
   String get downloadStatus => _downloadStatus;
@@ -50,6 +54,7 @@ class AppState extends ChangeNotifier {
   String? get errorMessage => _errorMessage;
 
   bool get isSetupComplete => _isBootstrapped && _installedDistro.isNotEmpty;
+  bool get isDEInstalled => _installedDE.isNotEmpty;
 
   String get gpuType {
     final vendor = _deviceInfo['gpuVendor']?.toString() ?? '';
@@ -103,6 +108,7 @@ class AppState extends ChangeNotifier {
       } else if (progress >= 1.0) {
         if (_isExtracting) {
           _isExtracting = false;
+          refreshStatus();
         }
       }
       notifyListeners();
@@ -132,9 +138,11 @@ class AppState extends ChangeNotifier {
   Future<void> refreshStatus() async {
     try {
       final status = await DroidDeskPlatform.getRuntimeStatus();
-      _isBootstrapped = status['isBootstrapped'] as bool? ?? false;
-      _isRunning = status['isRunning'] as bool? ?? false;
-      _installedDistro = status['distro'] as String? ?? '';
+      _isBootstrapped = status['isBootstrapped'] == true;
+      _isRunning = status['isRunning'] == true;
+      _installedDistro = status['distro']?.toString() ?? '';
+      _installedDE = status['installedDE']?.toString() ?? '';
+
       notifyListeners();
     } catch (e) {
       _errorMessage = 'Failed to get runtime status: $e';
@@ -160,6 +168,11 @@ class AppState extends ChangeNotifier {
 
   void setSelectedDE(String de) {
     _selectedDE = de;
+    notifyListeners();
+  }
+
+  void setInstallType(String type) {
+    _installType = type;
     notifyListeners();
   }
 
@@ -215,7 +228,7 @@ class AppState extends ChangeNotifier {
       _statusMessage = 'Installing Desktop Environment...';
       _errorMessage = null;
       notifyListeners();
-      await DroidDeskPlatform.installDesktopEnvironment(_selectedDE);
+      await DroidDeskPlatform.installDesktopEnvironment(_selectedDE, type: _installType);
     } catch (e) {
       _errorMessage = 'Installation failed: $e';
       _isExtracting = false;
@@ -225,10 +238,10 @@ class AppState extends ChangeNotifier {
 
   // ── Session Control ──
 
-  Future<void> startLinux({String mode = 'vnc'}) async {
+  Future<void> startLinux({String mode = 'vnc', int width = 1920, int height = 1080}) async {
     try {
       _errorMessage = null;
-      await DroidDeskPlatform.startLinux(de: _selectedDE, mode: mode);
+      await DroidDeskPlatform.startLinux(de: _selectedDE, mode: mode, width: width, height: height);
       _isRunning = true;
       notifyListeners();
     } catch (e) {

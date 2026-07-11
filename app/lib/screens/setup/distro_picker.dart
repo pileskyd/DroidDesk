@@ -103,8 +103,8 @@ class DistroPickerScreen extends StatelessWidget {
                         onPressed: () {
                           Navigator.of(context).push(
                             PageRouteBuilder(
-                              pageBuilder: (_, __, ___) => const DEPickerScreen(),
-                              transitionsBuilder: (_, animation, __, child) {
+                              pageBuilder: (context, animation, secondaryAnimation) => const DEPickerScreen(),
+                              transitionsBuilder: (context, animation, secondaryAnimation, child) {
                                 return FadeTransition(
                                   opacity: animation,
                                   child: child,
